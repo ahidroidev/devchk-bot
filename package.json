@@ -1,0 +1,15 @@
+{
+  "name": "devchk-bot",
+  "version": "1.0.1",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Devloped by Dev Crack (@devcrackpy/ https://t.me/devcrackpy)",
+  "license": "ISC",
+  "description": "Checker Living or Status Credits o Debits Cards for Bot on Telegram.",
+  "dependencies": {
+    "telegraf": "^4.16.3"
+  }
+}
