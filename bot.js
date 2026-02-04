@@ -7,7 +7,7 @@ const consultarBIN = require("./funcionalidades/bin.js");
 const Token = "8540424517:AAH9w9sLBwdBEdgwO7E9OETsVgOsYx7Czsg";
 const bot = new Telegraf(Token);
 bot.start((ctx) => ctx.reply('Welcome, starting with "/user"'));
-let autorice = "-1002619874939";
+let autorice = "-1003828826818";
 //falta base de datos gateway y solucionar la api que reconoce los datos bancarios
 
 //comando
