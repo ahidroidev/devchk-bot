@@ -1,0 +1,12 @@
+# Variables de entorno
+.env
+
+# Dependencias de Node.js
+node_modules/
+
+# Logs & Temps
+logs/
+
+# Configuración local
+config.json
+authorized_ids.json

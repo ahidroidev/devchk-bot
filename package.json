@@ -1,15 +1,17 @@
 {
   "name": "devchk-bot",
-  "version": "1.0.1",
-  "main": "index.js",
+  "version": "2.0.0",
+  "main": "bot.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node bot.js"
   },
   "keywords": [],
-  "author": "Devloped by Dev Crack (@devcrackpy/ https://t.me/devcrackpy)",
+  "author": "Developed by Dev Crack (@devcrackpy/ https://t.me/devcrackpy)",
   "license": "MIT",
   "description": "Checker Living or Status Credits o Debits Cards for Bot on Telegram.",
   "dependencies": {
+    "dotenv": "^17.2.3",
     "telegraf": "^4.16.3"
   }
 }

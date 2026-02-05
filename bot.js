@@ -1,3 +1,5 @@
+require("dotenv").config();
+const { BOT_TOKEN } = process.env;
 const { Telegraf } = require("telegraf");
 const Auth = require("./funcionalidades/auth.js");
 const Generador = require("./funcionalidades/generador.js");
@@ -5,8 +7,11 @@ const valLuhn = require("./funcionalidades/luhn.js");
 const extra = require("./funcionalidades/extra.js");
 const consultarBIN = require("./funcionalidades/bin.js");
 const { Markup } = require("telegraf");
-const Token = "8540424517:AAH9w9sLBwdBEdgwO7E9OETsVgOsYx7Czsg";
-const bot = new Telegraf(Token);
+
+if (!process.env.BOT_TOKEN) {
+  throw new Error("Falta BOT_TOKEN en las variables de entorno.");
+}
+const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // --- MIDDLEWARE GLOBAL ---
 // Esto protege TODOS los comandos que estén debajo
