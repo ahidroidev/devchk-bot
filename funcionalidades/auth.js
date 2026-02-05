@@ -2,63 +2,72 @@ const fs = require("fs");
 const { Markup } = require("telegraf");
 const path = "./authorized_ids.json";
 
-// Tu ID de Administrador (Cámbialo por el tuyo real)
-const ADMIN_ID = 8477619369;
+// Cargar variables de entorno (Asegúrate de que ADMIN_ID esté en tu .env)
+const ADMIN_ID = parseInt(process.env.ADMIN_ID);
 
-// Cargar IDs desde el archivo o usar los iniciales
-let authorizedIds = new Set([ADMIN_ID, -1001753736546]);
+// Estructura inicial
+let authData = {
+  users: new Set([ADMIN_ID]),
+  groups: new Set([-1001753736546]), // ID de ejemplo de tu grupo
+};
 
+// Cargar desde el archivo JSON si existe
 if (fs.existsSync(path)) {
-  const data = JSON.parse(fs.readFileSync(path));
-  data.forEach((id) => authorizedIds.add(id));
+  const rawData = JSON.parse(fs.readFileSync(path));
+  authData.users = new Set(rawData.users || [ADMIN_ID]);
+  authData.groups = new Set(rawData.groups || []);
 }
 
 const saveIds = () => {
-  fs.writeFileSync(path, JSON.stringify(Array.from(authorizedIds)));
+  const dataToSave = {
+    users: Array.from(authData.users),
+    groups: Array.from(authData.groups),
+  };
+  fs.writeFileSync(path, JSON.stringify(dataToSave, null, 2));
 };
 
 const authMiddleware = (ctx, next) => {
   const chatId = ctx.chat?.id;
   const userId = ctx.from?.id;
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
 
-  // Permitir si el chat (grupo) o el usuario están en la lista
-  if (authorizedIds.has(chatId) || authorizedIds.has(userId)) {
-    return next();
-  }
+  // Verificamos según el tipo de chat
+  const isAuthorized = isGroup
+    ? authData.groups.has(chatId)
+    : authData.users.has(userId);
 
-  // Ignorar si no está autorizado (evita spam de respuestas en grupos)
+  if (isAuthorized) return next();
+
   if (ctx.updateType === "message" && ctx.message.text?.startsWith("/")) {
+    const typeLabel = isGroup ? "este Grupo" : "tu Usuario";
     return ctx.reply(
-      "🚫 Chat o Usuario no autorizado. ID: " +
-        chatId +
-        Markup.inlineKeyboard([
-          Markup.button.callback(
-            " Solicitar Acceso",
-            `request_access_${chatId}`,
-          ),
-        ]),
+      `🚫 Acceso denegado para ${typeLabel}.\nID: ${chatId}`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback("📩 Solicitar Acceso", `req_${chatId}`)],
+      ]),
     );
   }
 };
 
-const authorizeUser = (id) => {
+// Función para autorizar detectando automáticamente si es grupo o usuario
+const authorize = (id) => {
   const numId = parseInt(id);
   if (isNaN(numId)) return false;
-  authorizedIds.add(numId);
-  saveIds(); // Guardar en el JSON
+
+  if (numId < 0) {
+    authData.groups.add(numId);
+  } else {
+    authData.users.add(numId);
+  }
+  saveIds();
   return true;
 };
 
-const unauthorizeUser = (id) => {
+const unauthorize = (id) => {
   const numId = parseInt(id);
-  if (isNaN(numId)) return false;
-
-  if (authorizedIds.has(numId)) {
-    authorizedIds.delete(numId);
-    saveIds(); // Actualizar el JSON
-    return true;
-  }
-  return false;
+  const removed = authData.users.delete(numId) || authData.groups.delete(numId);
+  if (removed) saveIds();
+  return removed;
 };
 
-module.exports = { authMiddleware, authorizeUser, unauthorizeUser, ADMIN_ID };
+module.exports = { authMiddleware, authorize, unauthorize, ADMIN_ID, authData };
