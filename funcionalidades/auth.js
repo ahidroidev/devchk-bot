@@ -1,4 +1,5 @@
 const fs = require("fs");
+const { Markup } = require("telegraf");
 const path = "./authorized_ids.json";
 
 // Tu ID de Administrador (Cámbialo por el tuyo real)
@@ -27,7 +28,16 @@ const authMiddleware = (ctx, next) => {
 
   // Ignorar si no está autorizado (evita spam de respuestas en grupos)
   if (ctx.updateType === "message" && ctx.message.text?.startsWith("/")) {
-    return ctx.reply("🚫 Chat o Usuario no autorizado. ID: " + chatId);
+    return ctx.reply(
+      "🚫 Chat o Usuario no autorizado. ID: " +
+        chatId +
+        Markup.inlineKeyboard([
+          Markup.button.callback(
+            " Solicitar Acceso",
+            `request_access_${chatId}`,
+          ),
+        ]),
+    );
   }
 };
 
@@ -51,4 +61,4 @@ const unauthorizeUser = (id) => {
   return false;
 };
 
-module.exports = { authMiddleware, authorizeUser, ADMIN_ID };
+module.exports = { authMiddleware, authorizeUser, unauthorizeUser, ADMIN_ID };
