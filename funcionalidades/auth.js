@@ -3,7 +3,7 @@ const { Markup } = require("telegraf");
 const path = "./authorized_ids.json";
 
 // Cargar variables de entorno (Asegúrate de que ADMIN_ID esté en tu .env)
-const ADMIN_ID = parseInt(process.env.ADMIN_ID);
+const ADMIN_ID = parseInt(process.env.ADMIN_ID.trim());
 
 // Estructura inicial
 let authData = {
@@ -26,22 +26,28 @@ const saveIds = () => {
   fs.writeFileSync(path, JSON.stringify(dataToSave, null, 2));
 };
 
-const authMiddleware = (ctx, next) => {
+// funcionalidades/auth.js
+const authMiddleware = async (ctx, next) => {
   const chatId = ctx.chat?.id;
   const userId = ctx.from?.id;
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
 
-  // Verificamos según el tipo de chat
+  // REGLA DE ORO: Si eres el Admin del .env, pasas siempre
+  if (userId === ADMIN_ID) {
+    return next();
+  }
+
+  // Verificamos las listas para el resto
   const isAuthorized = isGroup
     ? authData.groups.has(chatId)
     : authData.users.has(userId);
 
   if (isAuthorized) return next();
 
+  // Si no está autorizado, mostramos el botón
   if (ctx.updateType === "message" && ctx.message.text?.startsWith("/")) {
-    const typeLabel = isGroup ? "este Grupo" : "tu Usuario";
     return ctx.reply(
-      `🚫 Acceso denegado para ${typeLabel}.\nID: ${chatId}`,
+      `🚫 Acceso denegado.\nID: ${chatId}`,
       Markup.inlineKeyboard([
         [Markup.button.callback("📩 Solicitar Acceso", `req_${chatId}`)],
       ]),

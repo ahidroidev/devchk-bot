@@ -108,61 +108,96 @@ bot.command("list", (ctx) => {
 });
 
 // Manejar el clic del usuario en "Solicitar Acceso"
+// Manejar clic en "Solicitar Acceso"
 bot.action(/req_(.+)/, async (ctx) => {
-  // IMPORTANTE: ctx.match[1] es el ID capturado
-  const targetId = ctx.match[1];
-  const user = ctx.from.username
+  // 1. Limpiamos el ID extraído
+  const targetId = String(ctx.match[1]).trim();
+  const userId = ctx.from.id;
+  const requester = ctx.from.username
     ? `@${ctx.from.username}`
     : ctx.from.first_name;
 
-  await ctx.answerCbQuery("Solicitud enviada.");
-  await ctx.editMessageText(
-    "⏳ Tu solicitud ha sido enviada al administrador...",
-  );
+  // 2. DEBUG: Esto aparecerá en tu terminal SI O SI al pulsar el botón
+  console.log(`--- INTENTO DE SOLICITUD ---`);
+  console.log(`Target ID: ${targetId}`);
+  console.log(`Admin ID: ${Auth.ADMIN_ID}`);
 
-  // Enviar al administrador (Usamos el ID del .env)
-  // Convertimos targetId a número para evitar errores de envío
-  await bot.telegram.sendMessage(
-    Auth.ADMIN_ID,
-    `🔔 <b>Nueva Solicitud</b>\n\n<b>De:</b> ${user}\n<b>ID:</b> <code>${targetId}</code>`,
-    {
-      parse_mode: "HTML",
-      ...Markup.inlineKeyboard([
-        [
-          Markup.button.callback("✅ Aprobar", `ok_${targetId}`),
-          Markup.button.callback("❌ Rechazar", `no_${targetId}`),
-        ],
-      ]),
-    },
-  );
+  // 3. Validación para grupos (Solo Owner)
+  if (targetId.startsWith("-")) {
+    try {
+      const member = await ctx.getChatMember(userId);
+      if (member.status !== "creator") {
+        return ctx.answerCbQuery(
+          "⚠️ Solo el Owner puede solicitar acceso para el grupo.",
+          { show_alert: true },
+        );
+      }
+    } catch (e) {
+      return ctx.answerCbQuery("❌ Error: El bot debe ser Admin del grupo.");
+    }
+  }
+
+  // 4. ENVÍO AL ADMIN (Con captura de error específica)
+  try {
+    await bot.telegram.sendMessage(
+      Auth.ADMIN_ID,
+      `🔔 <b>Nueva Solicitud</b>\n\n` +
+        `<b>ID:</b> <code>${targetId}</code>\n` +
+        `<b>User:</b> ${requester}`,
+      {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("✅ Aprobar", `ok_${targetId}`),
+            Markup.button.callback("❌ Rechazar", `no_${targetId}`),
+          ],
+        ]),
+      },
+    );
+
+    await ctx.answerCbQuery("✅ Solicitud enviada.");
+    await ctx.editMessageText("⏳ Esperando aprobación del administrador...");
+  } catch (error) {
+    console.error("FALLO AL ENVIAR AL ADMIN:", error.description);
+    // Esta alerta te dirá en el móvil POR QUÉ falló
+    await ctx.answerCbQuery(`❌ Error: ${error.description}`, {
+      show_alert: true,
+    });
+  }
 });
 
 // Acción de Aprobar
 bot.action(/ok_(.+)/, async (ctx) => {
-  // Verificamos que QUIEN PULSA EL BOTÓN sea el admin del .env
+  // 1. Get ID Match from Callback Data
+  const targetId = ctx.match[1];
+
+  // 2. Verify what u' be ADMIN
   if (ctx.from.id !== Auth.ADMIN_ID) {
     return ctx.answerCbQuery("❌ No tienes permiso para aprobar.");
   }
 
-  const targetId = ctx.match[1];
+  // 3. Process Authorization
   if (Auth.authorize(targetId)) {
     await ctx.editMessageText(`✅ ID ${targetId} autorizado.`);
-    // Avisar al usuario/grupo solicitado
+
+    //4. Notify the user about approval
     bot.telegram.sendMessage(
       targetId,
       "🎉 ¡Acceso aprobado! Ya puedes usar el bot.",
     );
+  } else {
+    ctx.answerCbQuery("⚠️ Error al autorizar. ID inválido.");
   }
 });
 
 // Acción de Rechazar
 bot.action(/no_(.+)/, async (ctx) => {
+  const targetId = ctx.match[1];
   if (ctx.from.id !== Auth.ADMIN_ID)
     return ctx.answerCbQuery(
       "❌ Solo el administrador puede usar este comando.",
     );
 
-  const targetId = ctx.match[1];
   await ctx.editMessageText(`❌ ID ${targetId} - autorización denegada.`);
   bot.telegram.sendMessage(
     targetId,
