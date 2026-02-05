@@ -4,7 +4,7 @@ const Generador = require("./funcionalidades/generador.js");
 const valLuhn = require("./funcionalidades/luhn.js");
 const extra = require("./funcionalidades/extra.js");
 const consultarBIN = require("./funcionalidades/bin.js");
-
+const { Markup } = require("telegraf");
 const Token = "8540424517:AAH9w9sLBwdBEdgwO7E9OETsVgOsYx7Czsg";
 const bot = new Telegraf(Token);
 
@@ -12,7 +12,9 @@ const bot = new Telegraf(Token);
 // Esto protege TODOS los comandos que estén debajo
 bot.use(Auth.authMiddleware);
 
-bot.start((ctx) => ctx.reply("Welcome! Use /cmds to see available options."));
+bot.start((ctx) =>
+  ctx.reply("Welcome to DevChk Bot! Use /info to get your Authorization"),
+);
 
 // --- COMANDO DE ADMINISTRACIÓN ---
 bot.command("auth", (ctx) => {
@@ -53,6 +55,13 @@ bot.command("unauth", (ctx) => {
 
 // --- COMANDOS DE USUARIO (Ya protegidos por el middleware) ---
 
+bot.command("info", async (ctx) => {
+  ctx.reply(
+    "🚀 DevChk Bot v1.0\n\n💡 Comandos disponibles:\n• /gen - Generar tarjetas\n• /bin - Consultar información de BIN\n• /ex - Extrapolación de números\n" +
+      "\n\n\n💻 Developed by @devcrackpy",
+  );
+});
+
 bot.command("id", (ctx) => {
   ctx.reply(`👤 Tu ID: ${ctx.from.id}\n👥 Chat ID: ${ctx.chat.id}`);
 });
@@ -89,6 +98,63 @@ bot.command("list", (ctx) => {
   }
 });
 
+bot.action(/req_(.+)/, async (ctx) => {
+  const targetId = ctx.match[1];
+  const user = ctx.from.username
+    ? `@${ctx.from.username}`
+    : CSSSkewX.from.frist_name;
+
+  await ctx.answerCbQuery("- Enviando solicitud de aprobación...");
+  await ctx.editMessageText(
+    "✅ Solicitud enviada. Espera la aprobación del administrador.",
+  );
+
+  bot.telegram.sendMessage(
+    Auth.ADMIN_ID,
+    `📢 <b>Nueva solicitud de acceso:</b>\n\n<b>Usuario:</b> ${user}\n<b>ID:</b> <code>${targetId}</code>`,
+    {
+      parse_mode: "HTML",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback("✅ Autorizar", `ok_${targetId}`),
+          Markup.button.callback("❌ Denegar", `no_${targetId}`),
+        ],
+      ]),
+    },
+  );
+});
+
+bot.action(/ok_(.+)/, async (ctx) => {
+  if (ctx.from.id !== Auth.ADMIN_ID)
+    return ctx.answerCbQuery(
+      "❌ Solo el administrador puede usar este comando.",
+    );
+
+  const targetId = ctx.match[1];
+  if (Auth.authorizeUser(targetId)) {
+    await ctx.editMessageText(`✅ ID ${targetId} - autorizado correctamente.`);
+    bot.telegram.sendMessage(
+      targetId,
+      "🎉 Tu solicitud de acceso ha sido aprobada por el administrador.",
+    );
+  } else {
+    await ctx.answerCbQuery("⚠️ Error al autorizar el ID.");
+  }
+});
+
+bot.action(/no_(.+)/, async (ctx) => {
+  if (ctx.from.id !== Auth.ADMIN_ID)
+    return ctx.answerCbQuery(
+      "❌ Solo el administrador puede usar este comando.",
+    );
+
+  const targetId = ctx.match[1];
+  await ctx.editMessageText(`❌ ID ${targetId} - autorización denegada.`);
+  bot.telegram.sendMessage(
+    targetId,
+    "❌ Tu solicitud de acceso ha sido denegada por el administrador.",
+  );
+});
 // ... Agrega aquí el resto de tus comandos (lc, nn, ny) sin necesidad de IFs de autorizar
 
 bot.launch();
@@ -123,3 +189,8 @@ async function bin(ctx) {
     return "❌ Error consultando BIN.";
   }
 }
+
+/*async function info(ctx) {
+
+}
+*/
