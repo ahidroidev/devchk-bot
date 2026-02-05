@@ -39,4 +39,16 @@ const authorizeUser = (id) => {
   return true;
 };
 
+const unauthorizeUser = (id) => {
+  const numId = parseInt(id);
+  if (isNaN(numId)) return false;
+
+  if (authorizedIds.has(numId)) {
+    authorizedIds.delete(numId);
+    saveIds(); // Actualizar el JSON
+    return true;
+  }
+  return false;
+};
+
 module.exports = { authMiddleware, authorizeUser, ADMIN_ID };
