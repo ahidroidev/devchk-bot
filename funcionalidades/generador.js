@@ -36,7 +36,7 @@ function Generador(comando) {
   if (generador.length > 28)
     return "Invalid BIN. Correct format:\n CC|MM|YYYY|CVV";
   digitos = generador.slice(0, generador.indexOf("|"));
-  listaGen = "点 BIN --»" + generador + "\n═══════════════════════════\n";
+  listaGen = "点 BIN --» " + generador + "\n═══════════════════════════\n";
   for (let j = 0; j <= 10; j++) {
     const anioGen = AnioGen(anio, anioActual);
     const mesGen = MesGen(mes);

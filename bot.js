@@ -1,5 +1,6 @@
 const { Telegraf } = require("telegraf");
 const axios = require("axios");
+const Auth = require("./funcionalidades/auth.js"); //Función para validar usuarios
 const Generador = require("./funcionalidades/generador.js");
 const valLuhn = require("./funcionalidades/luhn.js");
 const extra = require("./funcionalidades/extra.js");
@@ -7,17 +8,36 @@ const consultarBIN = require("./funcionalidades/bin.js");
 const Token = "8540424517:AAH9w9sLBwdBEdgwO7E9OETsVgOsYx7Czsg";
 const bot = new Telegraf(Token);
 bot.start((ctx) => ctx.reply('Welcome, starting with "/user"'));
-let autorice = " -1003828826818";
-//falta base de datos gateway y solucionar la api que reconoce los datos bancarios
+const autorice = [-1001753736546, 8477619369]; // ID de grupos o usuarios autorizados
 
-//comando
+// Falta la DB y corrección del API de consulta Bancaría
 
-bot.on("new_chat_members", (ctx) => {
-  const newMembers = ctx.message.new_chat_members;
+// Comandos - Backend
+bot.use(Auth.authMiddleware); // Middleware de autenticación para proteger comandos
+bot.command("auth", (ctx) => {
+  if (ctx.from.id !== Auth.ADMIN_ID) {
+    return ctx.reply("❌ Unauthorized access.");
+  }
+  const newId = ctx.message.text.split(" ")[1];
+  if (Auth.authorizeUser(newId)) {
+    return ctx.reply(`✅ User with ID ${newId} has been authorized.`);
+  } else {
+    ctx.reply("⚠️ Please provide a valid numeric ID to authorize.");
+  }
+});
+
+bot.on("user", (ctx) => {
+  const newMembers = ctx.message.user;
   newMembers.forEach((member) => {
     const userId = member.id;
     const firstName = member.first_name;
-    ctx.reply("Bienvenido " + firstName + "\n Your ID: " + userId);
+    ctx.reply(
+      " - Welcome " +
+        firstName +
+        "\n Your ID: " +
+        userId +
+        "already authorized.",
+    );
   });
 });
 
@@ -159,5 +179,14 @@ async function bin(ctx) {
     return salida.includes("undefined", "null") ? "Input invalid BIN." : salida;
   } catch (error) {
     console.error(error.message);
+  }
+}
+
+function user(ctx) {
+  const id = ctx.message.chat.id;
+  if (!autorice.includes(id)) {
+    ctx.reply("Chat or Group unauthorized");
+  } else {
+    ctx.reply("Your ID: " + id);
   }
 }
