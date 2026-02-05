@@ -23,16 +23,14 @@ bot.start((ctx) =>
 
 // --- COMANDO DE ADMINISTRACIÓN ---
 bot.command("auth", (ctx) => {
-  if (ctx.from.id !== Auth.ADMIN_ID) {
-    return ctx.reply("❌ Solo el administrador puede usar este comando.");
-  }
-  const args = ctx.message.text.split(" ");
-  const newId = args[1];
+  if (ctx.from.id !== Auth.ADMIN_ID) return;
 
-  if (Auth.authorizeUser(newId)) {
-    return ctx.reply(`✅ ID ${newId} - autorizado correctamente.`);
+  const targetId = ctx.message.text.split(" ")[1];
+  if (Auth.authorize(targetId)) {
+    const tipo = parseInt(targetId) < 0 ? "Grupo" : "Usuario";
+    ctx.reply(`✅ ${tipo} ${targetId} autorizado.`);
   } else {
-    ctx.reply("⚠️ Uso: /auth [ID_NUMERICO]");
+    ctx.reply("⚠️ Indica un ID válido.");
   }
 });
 
@@ -93,60 +91,71 @@ bot.command("ex", (ctx) => {
 bot.command("list", (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
 
-  const fs = require("fs");
-  try {
-    const data = JSON.parse(fs.readFileSync("./authorized_ids.json", "utf8"));
-    const lista = data.map((id) => `• <code>${id}</code>`).join("\n");
-    ctx.replyWithHTML(`👥 <b> Usuarios y Grupos autorizados: </b>\n\n${lista}`);
-  } catch (err) {
-    ctx.reply("❌ Error al leer la lista de autorizados.");
-  }
+  const users =
+    Array.from(Auth.authData.users)
+      .map((id) => `👤 <code>${id}</code>`)
+      .join("\n") || "Ninguno";
+  const groups =
+    Array.from(Auth.authData.groups)
+      .map((id) => `👥 <code>${id}</code>`)
+      .join("\n") || "Ninguno";
+
+  ctx.replyWithHTML(
+    `<b>📋 LISTA DE AUTORIZADOS</b>\n\n` +
+      `<b>USUARIOS:</b>\n${users}\n\n` +
+      `<b>GRUPOS:</b>\n${groups}`,
+  );
 });
 
+// Manejar el clic del usuario en "Solicitar Acceso"
 bot.action(/req_(.+)/, async (ctx) => {
+  // IMPORTANTE: ctx.match[1] es el ID capturado
   const targetId = ctx.match[1];
   const user = ctx.from.username
     ? `@${ctx.from.username}`
-    : CSSSkewX.from.frist_name;
+    : ctx.from.first_name;
 
-  await ctx.answerCbQuery("- Enviando solicitud de aprobación...");
+  await ctx.answerCbQuery("Solicitud enviada.");
   await ctx.editMessageText(
-    "✅ Solicitud enviada. Espera la aprobación del administrador.",
+    "⏳ Tu solicitud ha sido enviada al administrador...",
   );
 
-  bot.telegram.sendMessage(
+  // Enviar al administrador (Usamos el ID del .env)
+  // Convertimos targetId a número para evitar errores de envío
+  await bot.telegram.sendMessage(
     Auth.ADMIN_ID,
-    `📢 <b>Nueva solicitud de acceso:</b>\n\n<b>Usuario:</b> ${user}\n<b>ID:</b> <code>${targetId}</code>`,
+    `🔔 <b>Nueva Solicitud</b>\n\n<b>De:</b> ${user}\n<b>ID:</b> <code>${targetId}</code>`,
     {
       parse_mode: "HTML",
       ...Markup.inlineKeyboard([
         [
-          Markup.button.callback("✅ Autorizar", `ok_${targetId}`),
-          Markup.button.callback("❌ Denegar", `no_${targetId}`),
+          Markup.button.callback("✅ Aprobar", `ok_${targetId}`),
+          Markup.button.callback("❌ Rechazar", `no_${targetId}`),
         ],
       ]),
     },
   );
 });
 
+// Acción de Aprobar
 bot.action(/ok_(.+)/, async (ctx) => {
-  if (ctx.from.id !== Auth.ADMIN_ID)
-    return ctx.answerCbQuery(
-      "❌ Solo el administrador puede usar este comando.",
-    );
+  // Verificamos que QUIEN PULSA EL BOTÓN sea el admin del .env
+  if (ctx.from.id !== Auth.ADMIN_ID) {
+    return ctx.answerCbQuery("❌ No tienes permiso para aprobar.");
+  }
 
   const targetId = ctx.match[1];
-  if (Auth.authorizeUser(targetId)) {
-    await ctx.editMessageText(`✅ ID ${targetId} - autorizado correctamente.`);
+  if (Auth.authorize(targetId)) {
+    await ctx.editMessageText(`✅ ID ${targetId} autorizado.`);
+    // Avisar al usuario/grupo solicitado
     bot.telegram.sendMessage(
       targetId,
-      "🎉 Tu solicitud de acceso ha sido aprobada por el administrador.",
+      "🎉 ¡Acceso aprobado! Ya puedes usar el bot.",
     );
-  } else {
-    await ctx.answerCbQuery("⚠️ Error al autorizar el ID.");
   }
 });
 
+// Acción de Rechazar
 bot.action(/no_(.+)/, async (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID)
     return ctx.answerCbQuery(
@@ -160,6 +169,15 @@ bot.action(/no_(.+)/, async (ctx) => {
     "❌ Tu solicitud de acceso ha sido denegada por el administrador.",
   );
 });
+
+bot.action(/req_(.+)/, async (ctx) => {
+  console.log("--- DEBUG SOLICITUD ---");
+  console.log("ID Solicitante:", ctx.match[1]);
+  console.log("Tu ADMIN_ID cargado:", Auth.ADMIN_ID);
+  console.log("Tipo de ADMIN_ID:", typeof Auth.ADMIN_ID);
+  // ... resto del código
+});
+
 // ... Agrega aquí el resto de tus comandos (lc, nn, ny) sin necesidad de IFs de autorizar
 
 bot.launch();
