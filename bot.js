@@ -23,9 +23,31 @@ bot.command("auth", (ctx) => {
   const newId = args[1];
 
   if (Auth.authorizeUser(newId)) {
-    return ctx.reply(`✅ ID ${newId} autorizado correctamente.`);
+    return ctx.reply(`✅ ID ${newId} - autorizado correctamente.`);
   } else {
     ctx.reply("⚠️ Uso: /auth [ID_NUMERICO]");
+  }
+});
+
+bot.command("unauth", (ctx) => {
+  if (ctx.from.id !== Auth.ADMIN_ID) {
+    return ctx.reply("❌ Solo el administrador puede usar este comando.");
+  }
+  const args = ctx.message.text.split(" ");
+  const idToRemove = parseInt(args[1]);
+
+  if (isNaN(idToRemove)) {
+    return ctx.reply("⚠️ Uso: /unauth [ID_NUMERICO]");
+  }
+
+  if (idToRemove === Auth.ADMIN_ID) {
+    return ctx.reply("🛡️ No puedes desautorizar al administrador.");
+  }
+
+  if (Auth.unauthorizeUser(idToRemove)) {
+    return ctx.reply(`✅ ID ${idToRemove} - desautorizado correctamente.`);
+  } else {
+    ctx.reply("⚠️ El ID proporcionado no estaba autorizado.");
   }
 });
 
@@ -54,6 +76,19 @@ bot.command("ex", (ctx) => {
   }
 });
 
+bot.command("list", (ctx) => {
+  if (ctx.from.id !== Auth.ADMIN_ID) return;
+
+  const fs = require("fs");
+  try {
+    const data = JSON.parse(fs.readFileSync("./authorized_ids.json", "utf8"));
+    const lista = data.map((id) => `• <code>${id}</code>`).join("\n");
+    ctx.replyWithHTML(`👥 <b> Usuarios y Grupos autorizados: </b>\n\n${lista}`);
+  } catch (err) {
+    ctx.reply("❌ Error al leer la lista de autorizados.");
+  }
+});
+
 // ... Agrega aquí el resto de tus comandos (lc, nn, ny) sin necesidad de IFs de autorizar
 
 bot.launch();
@@ -76,7 +111,7 @@ async function bin(ctx) {
   const API_KEY = "HAS-0YXMWRCJYdvDxk934HyT3rP";
   try {
     const resultado = await consultarBIN(comando, API_KEY);
-    if (!resultado || resultado.error) return "❌ BIN not found.";
+    if (!resultado || resultado.error) return "❌ BIN no encontrado.";
 
     return `════════[BANK DETAILS]════════
 点 BIN --» ${resultado.Scheme} ${resultado.Type}
@@ -85,6 +120,6 @@ async function bin(ctx) {
 ═══════════[INFO]═══════════
 点 CHECKED BY @${ctx.from.username || "User"}`;
   } catch (error) {
-    return "❌ Error consulting BIN.";
+    return "❌ Error consultando BIN.";
   }
 }
