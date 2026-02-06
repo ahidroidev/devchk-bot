@@ -35,24 +35,14 @@ bot.command("auth", (ctx) => {
 });
 
 bot.command("unauth", (ctx) => {
-  if (ctx.from.id !== Auth.ADMIN_ID) {
-    return ctx.reply("❌ Solo el administrador puede usar este comando.");
-  }
-  const args = ctx.message.text.split(" ");
-  const idToRemove = parseInt(args[1]);
+  // Verificación de seguridad extra
+  if (ctx.from.id !== Auth.ADMIN_ID) return ctx.reply("❌ No eres el admin.");
 
-  if (isNaN(idToRemove)) {
-    return ctx.reply("⚠️ Uso: /unauth [ID_NUMERICO]");
-  }
-
-  if (idToRemove === Auth.ADMIN_ID) {
-    return ctx.reply("🛡️ No puedes desautorizar al administrador.");
-  }
-
-  if (Auth.unauthorizeUser(idToRemove)) {
-    return ctx.reply(`✅ ID ${idToRemove} - desautorizado correctamente.`);
+  const targetId = ctx.message.text.split(" ")[1];
+  if (Auth.unauthorize(targetId)) {
+    ctx.reply(`✅ Acceso revocado para el ID ${targetId}`);
   } else {
-    ctx.reply("⚠️ El ID proporcionado no estaba autorizado.");
+    ctx.reply("⚠️ El ID no estaba en la lista.");
   }
 });
 
@@ -107,102 +97,78 @@ bot.command("list", (ctx) => {
   );
 });
 
-// Manejar el clic del usuario en "Solicitar Acceso"
-// Manejar clic en "Solicitar Acceso"
-bot.action(/req_(.+)/, async (ctx) => {
-  // 1. Limpiamos el ID extraído
-  const targetId = String(ctx.match[1]).trim();
-  const userId = ctx.from.id;
+// Manejador de Solicitud (r_)
+// --- MANEJADOR DE BOTONES (SOLICITUD Y APROBACIÓN) ---
+bot.on("callback_query", async (ctx) => {
+  const data = ctx.callbackQuery.data;
   const requester = ctx.from.username
     ? `@${ctx.from.username}`
     : ctx.from.first_name;
 
-  // 2. DEBUG: Esto aparecerá en tu terminal SI O SI al pulsar el botón
-  console.log(`--- INTENTO DE SOLICITUD ---`);
-  console.log(`Target ID: ${targetId}`);
-  console.log(`Admin ID: ${Auth.ADMIN_ID}`);
-
-  // 3. Validación para grupos (Solo Owner)
-  if (targetId.startsWith("-")) {
+  // 1. Cuando el USUARIO pulsa "Solicitar Acceso"
+  if (data.startsWith("REQ")) {
+    const targetId = data.replace("REQ", "");
     try {
-      const member = await ctx.getChatMember(userId);
-      if (member.status !== "creator") {
-        return ctx.answerCbQuery(
-          "⚠️ Solo el Owner puede solicitar acceso para el grupo.",
-          { show_alert: true },
-        );
-      }
+      await bot.telegram.sendMessage(
+        Auth.ADMIN_ID,
+        `🔔 <b>Nueva Solicitud</b>\nID: <code>${targetId}</code>\nDe: ${requester}`,
+        {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback("✅ Aprobar", `OK${targetId}`),
+              Markup.button.callback("❌ Rechazar", `NO${targetId}`),
+            ],
+          ]),
+        },
+      );
+      await ctx.answerCbQuery("✅ Solicitud enviada.");
+      await ctx.editMessageText("⏳ Esperando aprobación del administrador...");
     } catch (e) {
-      return ctx.answerCbQuery("❌ Error: El bot debe ser Admin del grupo.");
+      await ctx.answerCbQuery("❌ Error: Admin no disponible.");
     }
   }
 
-  // 4. ENVÍO AL ADMIN (Con captura de error específica)
-  try {
-    await bot.telegram.sendMessage(
-      Auth.ADMIN_ID,
-      `🔔 <b>Nueva Solicitud</b>\n\n` +
-        `<b>ID:</b> <code>${targetId}</code>\n` +
-        `<b>User:</b> ${requester}`,
-      {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback("✅ Aprobar", `ok_${targetId}`),
-            Markup.button.callback("❌ Rechazar", `no_${targetId}`),
-          ],
-        ]),
-      },
-    );
+  // 2. Cuando TÚ (Admin) pulsas "Aprobar"
+  if (data.startsWith("OK")) {
+    if (ctx.from.id !== Auth.ADMIN_ID) {
+      return ctx.answerCbQuery("❌ No eres el Administrador.", {
+        show_alert: true,
+      });
+    }
 
-    await ctx.answerCbQuery("✅ Solicitud enviada.");
-    await ctx.editMessageText("⏳ Esperando aprobación del administrador...");
-  } catch (error) {
-    console.error("FALLO AL ENVIAR AL ADMIN:", error.description);
-    // Esta alerta te dirá en el móvil POR QUÉ falló
-    await ctx.answerCbQuery(`❌ Error: ${error.description}`, {
-      show_alert: true,
-    });
-  }
-});
+    const targetId = data.replace("OK", "");
+    if (Auth.authorize(targetId)) {
+      await ctx.answerCbQuery("✅ Usuario Autorizado.");
+      await ctx.editMessageText(
+        `✅ El ID <code>${targetId}</code> ha sido guardado.`,
+        { parse_mode: "HTML" },
+      );
 
-// Acción de Aprobar
-bot.action(/ok_(.+)/, async (ctx) => {
-  // 1. Get ID Match from Callback Data
-  const targetId = ctx.match[1];
-
-  // 2. Verify what u' be ADMIN
-  if (ctx.from.id !== Auth.ADMIN_ID) {
-    return ctx.answerCbQuery("❌ No tienes permiso para aprobar.");
+      try {
+        await bot.telegram.sendMessage(
+          targetId,
+          "🎉 ¡Tu acceso ha sido aprobado!",
+        );
+      } catch (e) {
+        console.log("Usuario ya autorizado, pero no se pudo enviar mensaje.");
+      }
+    }
   }
 
-  // 3. Process Authorization
-  if (Auth.authorize(targetId)) {
-    await ctx.editMessageText(`✅ ID ${targetId} autorizado.`);
-
-    //4. Notify the user about approval
-    bot.telegram.sendMessage(
-      targetId,
-      "🎉 ¡Acceso aprobado! Ya puedes usar el bot.",
-    );
-  } else {
-    ctx.answerCbQuery("⚠️ Error al autorizar. ID inválido.");
+  // 3. Cuando TÚ (Admin) pulsas "Rechazar"
+  if (data.startsWith("NO")) {
+    if (ctx.from.id !== Auth.ADMIN_ID)
+      return ctx.answerCbQuery("No autorizado.");
+    const targetId = data.replace("NO", "");
+    await ctx.editMessageText(`❌ ID ${targetId} rechazado.`);
+    try {
+      await bot.telegram.sendMessage(
+        targetId,
+        "🚫 Tu solicitud fue rechazada.",
+      );
+    } catch (e) {}
   }
-});
-
-// Acción de Rechazar
-bot.action(/no_(.+)/, async (ctx) => {
-  const targetId = ctx.match[1];
-  if (ctx.from.id !== Auth.ADMIN_ID)
-    return ctx.answerCbQuery(
-      "❌ Solo el administrador puede usar este comando.",
-    );
-
-  await ctx.editMessageText(`❌ ID ${targetId} - autorización denegada.`);
-  bot.telegram.sendMessage(
-    targetId,
-    "❌ Tu solicitud de acceso ha sido denegada por el administrador.",
-  );
 });
 
 bot.action(/req_(.+)/, async (ctx) => {
@@ -211,6 +177,20 @@ bot.action(/req_(.+)/, async (ctx) => {
   console.log("Tu ADMIN_ID cargado:", Auth.ADMIN_ID);
   console.log("Tipo de ADMIN_ID:", typeof Auth.ADMIN_ID);
   // ... resto del código
+});
+
+bot.command("test_admin", async (ctx) => {
+  try {
+    await bot.telegram.sendMessage(
+      Auth.ADMIN_ID,
+      "✅ Conexión con el Administrador exitosa.",
+    );
+    ctx.reply("He enviado un mensaje a tu privado. ¿Lo recibiste?");
+  } catch (e) {
+    ctx.reply(
+      "❌ Error: No puedo enviarte mensajes. Asegúrate de haber presionado START en el bot.",
+    );
+  }
 });
 
 // ... Agrega aquí el resto de tus comandos (lc, nn, ny) sin necesidad de IFs de autorizar
