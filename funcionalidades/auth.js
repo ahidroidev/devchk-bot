@@ -1,6 +1,7 @@
 const fs = require("fs");
 const { Markup } = require("telegraf");
 require("dotenv").config();
+const crypto = require("crypto");
 
 const path = "./authorized_ids.json";
 const keyPath = "./keys.json";
@@ -125,7 +126,12 @@ const unauthorize = (id) => {
 
 const generateKey = (type) => {
   const duration = DURATIONS[type] || DURATIONS["1d"];
-  const key = `DEV-${type.toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+  // Generamos 8 bytes aleatorios, que al pasarlos a hex se convierten en 16 caracteres
+  const randomHex = crypto.randomBytes(8).toString("hex").toUpperCase();
+
+  const key = `DEV-${type.toUpperCase()}-${randomHex}`;
+
   authData.activeKeys[key] = duration;
   saveKeys();
   return key;

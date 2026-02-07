@@ -9,3 +9,4 @@ node_modules/
 
 # Configuración local
 authorized_ids.json
+keys.json
