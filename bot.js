@@ -55,6 +55,32 @@ bot.command("info", async (ctx) => {
   );
 });
 
+// --- COMANDO PARA GENERAR KEYS (Para ti y tus admins autorizados) ---
+bot.command("genkey", (ctx) => {
+  const userId = ctx.from.id;
+  // Verificamos si es el dueño o está en la lista de admins autorizados
+  const isPrivileged =
+    userId === Auth.ADMIN_ID || Auth.authData.users.has(userId);
+
+  if (!isPrivileged)
+    return ctx.reply("❌ No tienes permisos para generar keys.");
+
+  const newKey = Auth.generateKey();
+  ctx.replyWithHTML(`🔑 <b>Nueva Key Generada:</b>\n<code>${newKey}</code>`);
+});
+
+// --- COMANDO PARA REDIMIR KEYS (Para usuarios comunes) ---
+bot.command("redeem", (ctx) => {
+  const key = ctx.message.text.split(" ")[1];
+  if (!key) return ctx.reply("⚠️ Indica la key: /redeem KEY-XXXXXX");
+
+  if (Auth.redeemKey(ctx.from.id, key)) {
+    ctx.reply("✅ ¡Acceso concedido! Ahora puedes usar el bot.");
+  } else {
+    ctx.reply("❌ Key inválida o ya utilizada.");
+  }
+});
+
 bot.command("id", (ctx) => {
   ctx.reply(`👤 Tu ID: ${ctx.from.id}\n👥 Chat ID: ${ctx.chat.id}`);
 });
