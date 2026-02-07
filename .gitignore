@@ -8,5 +8,4 @@ node_modules/
 
 
 # Configuración local
-config.json
 authorized_ids.json
