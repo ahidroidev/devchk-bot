@@ -1,29 +1,61 @@
-// ... (mantenemos las importaciones anteriores)
+const fs = require("fs");
+const { Markup } = require("telegraf");
+require("dotenv").config();
+
+const path = "./authorized_ids.json";
 const keyPath = "./keys.json";
 
+// 1. PRIMERO declaramos la constante (el parseo del .env)
+const ADMIN_ID = parseInt(process.env.ADMIN_ID);
+
+// 2. DESPUÉS la usamos en el objeto
 let authData = {
   users: new Set([ADMIN_ID]),
   groups: new Set([]),
-  commonUsers: {}, // Ahora es un objeto: { "ID": expirationTimestamp }
-  activeKeys: {}, // Ahora es un objeto: { "KEY": durationInMs }
+  commonUsers: {},
+  activeKeys: {},
 };
 
-// --- LOGICA DE TIEMPOS ---
 const DURATIONS = {
   "1d": 24 * 60 * 60 * 1000,
   "1w": 7 * 24 * 60 * 60 * 1000,
   "1m": 30 * 24 * 60 * 60 * 1000,
 };
 
-// Cargar y Guardar (ajustado para objetos)
-const loadKeys = () => {
+// --- FUNCIONES DE PERSISTENCIA ---
+const loadAll = () => {
+  if (fs.existsSync(path)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path, "utf8"));
+      if (raw.users)
+        raw.users.forEach((id) => authData.users.add(parseInt(id)));
+      if (raw.groups)
+        raw.groups.forEach((id) => authData.groups.add(parseInt(id)));
+    } catch (e) {
+      console.error("Error cargando IDs:", e);
+    }
+  }
+
   if (fs.existsSync(keyPath)) {
-    const data = JSON.parse(fs.readFileSync(keyPath, "utf8"));
-    authData.commonUsers = data.commonUsers || {};
-    authData.activeKeys = data.activeKeys || {};
+    try {
+      const data = JSON.parse(fs.readFileSync(keyPath, "utf8"));
+      authData.commonUsers = data.commonUsers || {};
+      authData.activeKeys = data.activeKeys || {};
+    } catch (e) {
+      console.error("Error cargando Keys:", e);
+    }
   }
 };
-loadKeys();
+
+loadAll();
+
+const saveIds = () => {
+  const data = {
+    users: Array.from(authData.users),
+    groups: Array.from(authData.groups),
+  };
+  fs.writeFileSync(path, JSON.stringify(data, null, 2));
+};
 
 const saveKeys = () => {
   fs.writeFileSync(
@@ -39,37 +71,61 @@ const saveKeys = () => {
   );
 };
 
-// --- MIDDLEWARE ACTUALIZADO CON EXPIRACIÓN ---
+// --- MIDDLEWARE ---
 const authMiddleware = async (ctx, next) => {
   if (ctx.callbackQuery) return next();
   const userId = ctx.from?.id;
   const chatId = ctx.chat?.id;
 
-  // 1. Admins y Dueño (Siempre pasan)
-  if (authData.users.has(userId) || authData.groups.has(chatId)) return next();
+  if (
+    userId === ADMIN_ID ||
+    authData.users.has(userId) ||
+    authData.groups.has(chatId)
+  ) {
+    return next();
+  }
 
-  // 2. Usuarios con Key (Verificar tiempo)
   const expiration = authData.commonUsers[userId];
   if (expiration) {
     if (Date.now() < expiration) {
-      return next(); // Sigue activo
+      return next();
     } else {
-      delete authData.commonUsers[userId]; // Expiró
+      delete authData.commonUsers[userId];
       saveKeys();
-      return ctx.reply("⌛ Tu acceso ha expirado. Adquiere una nueva Key.");
+      return ctx.reply("⌛ Tu acceso ha expirado.");
     }
   }
 
-  // 3. Bloqueo
   if (ctx.updateType === "message" && ctx.message.text?.startsWith("/")) {
-    return ctx.reply(`🚫 Acceso denegado. ID: ${chatId}`);
+    return ctx.reply(
+      `🚫 Acceso denegado. ID: ${chatId}`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback("📩 Solicitar Acceso", `REQ${chatId}`)],
+      ]),
+    );
   }
 };
 
-// Funciones mejoradas
+// --- EXPORTACIÓN DE MÉTODOS ---
+const authorize = (id) => {
+  const numId = parseInt(id);
+  if (isNaN(numId)) return false;
+  if (numId < 0) authData.groups.add(numId);
+  else authData.users.add(numId);
+  saveIds();
+  return true;
+};
+
+const unauthorize = (id) => {
+  const numId = parseInt(id);
+  const deleted = authData.users.delete(numId) || authData.groups.delete(numId);
+  if (deleted) saveIds();
+  return deleted;
+};
+
 const generateKey = (type) => {
   const duration = DURATIONS[type] || DURATIONS["1d"];
-  const key = `DEV-${type.toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const key = `DEV-${type.toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   authData.activeKeys[key] = duration;
   saveKeys();
   return key;
@@ -82,14 +138,16 @@ const redeemKey = (userId, key) => {
     authData.commonUsers[userId] = expiration;
     delete authData.activeKeys[key];
     saveKeys();
-    return new Date(expiration).toLocaleDateString(); // Retorna fecha de fin
+    return new Date(expiration).toLocaleString();
   }
   return false;
 };
 
 module.exports = {
-  ...module.exports,
   authMiddleware,
+  authorize,
+  unauthorize,
+  ADMIN_ID,
   authData,
   generateKey,
   redeemKey,
