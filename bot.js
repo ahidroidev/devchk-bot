@@ -45,6 +45,39 @@ bot.command("unauth", (ctx) => {
     ctx.reply("⚠️ El ID no estaba en la lista.");
   }
 });
+// FIN COMANDOS ADMNISTRATIVOS (Solo el admin puede usar estos comandos)
+
+// --- COMANDOS PARA GENERAR KEYS ---
+
+// Comando: /genkey [1d | 1w | 1m]
+bot.command("genkey", (ctx) => {
+  const userId = ctx.from.id;
+  const isAllowed = userId === Auth.ADMIN_ID || Auth.authData.users.has(userId);
+  if (!isAllowed) return ctx.reply("❌ No autorizado.");
+
+  const args = ctx.message.text.split(" ")[1]; // 1d, 1w o 1m
+  if (!["1d", "1w", "1m"].includes(args)) {
+    return ctx.reply("⚠️ Indica duración: /genkey 1d, 1w o 1m");
+  }
+
+  const key = Auth.generateKey(args);
+  const tiempo =
+    args === "1d" ? "24 Horas" : args === "1w" ? "1 Semana" : "1 Mes";
+
+  ctx.replyWithHTML(`<b>🔑 Key [${tiempo}] Generada:</b>\n<code>${key}</code>`);
+});
+
+bot.command("redeem", (ctx) => {
+  const key = ctx.message.text.split(" ")[1];
+  if (!key) return ctx.reply("⚠️ /redeem KEY-XXXX-XXXX-XXXX-XXXX");
+
+  const expiryDate = Auth.redeemKey(ctx.from.id, key);
+  if (expiryDate) {
+    ctx.reply(`✅ Acceso activado hasta el: ${expiryDate}`);
+  } else {
+    ctx.reply("❌ Key inválida o ya utilizada.");
+  }
+});
 
 // --- COMANDOS DE USUARIO (Ya protegidos por el middleware) ---
 
@@ -53,32 +86,6 @@ bot.command("info", async (ctx) => {
     "🚀 DevChk Bot v1.0\n\n💡 Comandos disponibles:\n• /gen - Generar tarjetas\n• /bin - Consultar información de BIN\n• /ex - Extrapolación de números\n" +
       "\n\n\n💻 Developed by @devcrackpy",
   );
-});
-
-// --- COMANDO PARA GENERAR KEYS (Para ti y tus admins autorizados) ---
-bot.command("genkey", (ctx) => {
-  const userId = ctx.from.id;
-  // Verificamos si es el dueño o está en la lista de admins autorizados
-  const isPrivileged =
-    userId === Auth.ADMIN_ID || Auth.authData.users.has(userId);
-
-  if (!isPrivileged)
-    return ctx.reply("❌ No tienes permisos para generar keys.");
-
-  const newKey = Auth.generateKey();
-  ctx.replyWithHTML(`🔑 <b>Nueva Key Generada:</b>\n<code>${newKey}</code>`);
-});
-
-// --- COMANDO PARA REDIMIR KEYS (Para usuarios comunes) ---
-bot.command("redeem", (ctx) => {
-  const key = ctx.message.text.split(" ")[1];
-  if (!key) return ctx.reply("⚠️ Indica la key: /redeem KEY-XXXXXX");
-
-  if (Auth.redeemKey(ctx.from.id, key)) {
-    ctx.reply("✅ ¡Acceso concedido! Ahora puedes usar el bot.");
-  } else {
-    ctx.reply("❌ Key inválida o ya utilizada.");
-  }
 });
 
 bot.command("id", (ctx) => {
