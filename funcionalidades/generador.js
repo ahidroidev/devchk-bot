@@ -35,18 +35,19 @@ function Generador(comando) {
   generador = digitos + x + "|" + mes + "|" + anio + "|" + cvv;
   if (generador.length > 28)
     return "Invalid BIN. Correct format:\n CC|MM|YYYY|CVV";
-  digitos = generador.slice(0, generador.indexOf("|"));
-  listaGen = "点 BIN --» " + generador + "\n═══════════════════════════\n";
-  for (let j = 0; j <= 10; j++) {
-    const anioGen = AnioGen(anio, anioActual);
-    const mesGen = MesGen(mes);
-    const cvvGen = CvvGen(cvv);
-    const ccGen = TarjetaGen(digitos);
-    listaGen +=
-      ccGen + " | " + mesGen + " | " + anioGen + " | " + cvvGen + "\n";
-  }
 
-  return listaGen;
+  // ... (todo el código anterior igual hasta la línea 38)
+
+  digitos = generador.slice(0, generador.indexOf("|"));
+
+  // ELIMINAMOS EL BUCLE FOR (let j = 0; j <= 10; j++)
+  const anioGen = AnioGen(anio, anioActual);
+  const mesGen = MesGen(mes);
+  const cvvGen = CvvGen(cvv);
+  const ccGen = TarjetaGen(digitos);
+
+  // Retornamos SOLO la tarjeta formateada
+  return `${ccGen}|${mesGen}|${anioGen}|${cvvGen}`;
 }
 module.exports = Generador;
 
