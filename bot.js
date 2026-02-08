@@ -203,9 +203,9 @@ setInterval(async () => {
 // ==========================================
 bot.use(Auth.authMiddleware);
 
-// ==========================================
-// 4. BLOQUE PROTEGIDO (Requiere KEY o ser ADMIN)
-// ==========================================
+// ====================================
+// --- BLOQUE COMANDOS PROTEGIDOS   ---
+// ====================================
 
 bot.command("status", (ctx) => {
   const userId = ctx.from.id;
@@ -228,27 +228,43 @@ bot.command("status", (ctx) => {
   ctx.reply("❌ No tienes acceso activo.");
 });
 
-bot.command("gen", (ctx) => {
+// --- COMANDO GEN (Generador de Tarjetas) ---
+bot.command("gen", async (ctx) => {
   const userId = ctx.from.id;
 
-  // Los admins no tienen cooldown
+  // Rate Limit: 10 segundos para usuarios normales
   if (userId !== Auth.ADMIN_ID && !Auth.authData.users[userId]) {
-    const seconds = 10; // Tiempo de espera
-    const waiting = Auth.checkCooldown(userId, seconds);
-
-    if (waiting) {
-      return ctx.reply(`⏳ Espera ${waiting}s para usar /gen de nuevo.`);
-    }
+    const isWaiting = Auth.checkCooldown(userId, 10);
+    if (isWaiting) return ctx.reply(`⏳ Espera ${isWaiting}s para usar /gen.`);
   }
 
-  Gen(ctx);
+  // Lógica de Generación
+  const args = ctx.message.text.split(" ");
+  let binInput = args[1] ? args[1].replace(/[^\d,"x","X",\|]/g, "") : "";
+  let cantidad = parseInt(args[2]) || 10;
+
+  if (binInput.length < 4)
+    return ctx.reply("⚠️ Formato: /gen [bin] [cantidad]");
+  if (cantidad > 20) cantidad = 20;
+
+  let tarjetas = [];
+  for (let i = 0; i < cantidad; i++) {
+    tarjetas.push(Generador(binInput));
+  }
+
+  const binInfo = await bin(ctx);
+  const response = `💳 <b>Tarjetas [${cantidad}]</b>\n━━━━━━━━━━━━━━━━━━\n<code>${tarjetas.join("\n")}</code>\n━━━━━━━━━━━━━━━━━━\n${binInfo}`;
+
+  ctx.replyWithHTML(response);
 });
 
+// --- COMANDO BIN (Consulta de BIN) ---
 bot.command("bin", async (ctx) => {
   const txt = await bin(ctx);
   ctx.reply(txt);
 });
 
+// --- COMANDO EX (Extrapolación) ---
 bot.command("ex", (ctx) => {
   let message = ctx.message.text.replace(/[a-z,A-Z,/,\s]/g, "");
   if (message.length > 14) {
@@ -258,11 +274,16 @@ bot.command("ex", (ctx) => {
     ctx.reply("⚠️ Input too short for extrapolation.");
   }
 });
+// ====================================
+// --- CIERRE BLOQUE CMDS PROTECT   ---
+// ====================================
 
 // ==========================================
-// 5. BLOQUE DE ADMINISTRACIÓN
+// --- BLOQUE DE ADMINISTRACIÓN           ---
 // ==========================================
 
+// --- COMANDO AUTH (Promover a Admin) ---
+// Este comando es para que el Dueño principal pueda asignar otros administradores sin necesidad de editar archivos manualmente. Solo el Dueño puede usarlo.
 bot.command("auth", (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
 
@@ -283,6 +304,7 @@ bot.command("auth", (ctx) => {
   }
 });
 
+// --- COMANDO UN-AUTH (Revocar acceso) ---
 bot.command("unauth", (ctx) => {
   // Solo el Dueño principal puede quitar otros admins
   if (ctx.from.id !== Auth.ADMIN_ID)
@@ -349,35 +371,11 @@ bot.command("broadcast", async (ctx) => {
 
 // --- COMANDO STATS (ESTADÍSTICAS) ---
 bot.command("stats", (ctx) => {
-  const isAllowed =
-    ctx.from.id === Auth.ADMIN_ID || Auth.authData.users[ctx.from.id];
-  if (!isAllowed) return;
-
-  const totalAdmins = Object.keys(Auth.authData.users).length;
-  const totalUsers = Object.keys(Auth.authData.commonUsers).length;
-  const pendingKeys = Object.keys(Auth.authData.activeKeys).length;
-
-  const msg =
-    "📊 <b>MÉTRICAS DEL SISTEMA</b>\n" +
-    "━━━━━━━━━━━━━━━━━━\n" +
-    "👤 <b>Usuarios Activos:</b> <code>" +
-    totalUsers +
-    "</code>\n" +
-    "👮 <b>Admins:</b> <code>" +
-    totalAdmins +
-    "</code>\n" +
-    "🔑 <b>Keys sin usar:</b> <code>" +
-    pendingKeys +
-    "</code>\n" +
-    "📡 <b>Status:</b> <code>Online 🟢</code>\n" +
-    "━━━━━━━━━━━━━━━━━━";
-
+  if (ctx.from.id !== Auth.ADMIN_ID && !Auth.authData.users[ctx.from.id])
+    return;
+  const msg = `📊 <b>ESTADÍSTICAS</b>\n━━━━━━━━━━━━━━━━━━\n👤 Usuarios: ${Object.keys(Auth.authData.commonUsers).length}\n👮 Admins: ${Object.keys(Auth.authData.users).length}\n🔑 Keys Libres: ${Object.keys(Auth.authData.activeKeys).length}`;
   ctx.replyWithHTML(msg);
 });
-
-//===========================
-// --- CIERRE BLOQUE ADMINISTRACIÓN ---
-// ==========================
 
 bot.command("genkey", (ctx) => {
   const userId = ctx.from.id;
@@ -465,8 +463,14 @@ bot.command("backup", async (ctx) => {
   }
 });
 
+// ====================================
+// --- CIERRE BLOQUE ADMINISTRACIÓN ---
+// ====================================
+
+// ====================================
 // --- CALLBACK QUERIES & SOLICITUDES ---
 // Reemplaza o limpia tu bloque de callback_query por este:
+// ====================================
 bot.on("callback_query", async (ctx) => {
   const data = ctx.callbackQuery.data;
 
