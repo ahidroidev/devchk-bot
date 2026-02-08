@@ -6,16 +6,8 @@ const crypto = require("crypto");
 const path = "./authorized_ids.json";
 const keyPath = "./keys.json";
 
-// 1. PRIMERO declaramos la constante (el parseo del .env)
+// 1. DEFINICIÓN DE CONSTANTES (Primero el ADMIN_ID para evitar ReferenceError)
 const ADMIN_ID = parseInt(process.env.ADMIN_ID);
-
-// 2. DESPUÉS la usamos en el objeto
-let authData = {
-  users: new Set([ADMIN_ID]),
-  groups: new Set([]),
-  commonUsers: {},
-  activeKeys: {},
-};
 
 const DURATIONS = {
   "1d": 24 * 60 * 60 * 1000,
@@ -23,7 +15,38 @@ const DURATIONS = {
   "1m": 30 * 24 * 60 * 60 * 1000,
 };
 
-// --- FUNCIONES DE PERSISTENCIA ---
+// 2. ESTADO DEL BOT
+let authData = {
+  users: new Set([ADMIN_ID]),
+  groups: new Set([]),
+  commonUsers: {}, // { "userId": timestamp }
+  activeKeys: {}, // { "KEY": durationMs }
+  notifiedUsers: new Set(),
+};
+
+// 3. PERSISTENCIA
+const saveIds = () => {
+  const data = {
+    users: Array.from(authData.users),
+    groups: Array.from(authData.groups),
+  };
+  fs.writeFileSync(path, JSON.stringify(data, null, 2));
+};
+
+const saveKeys = () => {
+  fs.writeFileSync(
+    keyPath,
+    JSON.stringify(
+      {
+        commonUsers: authData.commonUsers,
+        activeKeys: authData.activeKeys,
+      },
+      null,
+      2,
+    ),
+  );
+};
+
 const loadAll = () => {
   if (fs.existsSync(path)) {
     try {
@@ -50,45 +73,32 @@ const loadAll = () => {
 
 loadAll();
 
-const saveIds = () => {
-  const data = {
-    users: Array.from(authData.users),
-    groups: Array.from(authData.groups),
-  };
-  fs.writeFileSync(path, JSON.stringify(data, null, 2));
-};
-
-const saveKeys = () => {
-  fs.writeFileSync(
-    keyPath,
-    JSON.stringify(
-      {
-        commonUsers: authData.commonUsers,
-        activeKeys: authData.activeKeys,
-      },
-      null,
-      2,
-    ),
-  );
-};
-
-// --- MIDDLEWARE ---
+// 4. MIDDLEWARE DE PROTECCIÓN
 const authMiddleware = async (ctx, next) => {
+  // Dentro del authMiddleware, antes del next()
+  if (ctx.message && ctx.message.text) {
+    console.log(`[LOG] User ${ctx.from.id} usó: ${ctx.message.text}`);
+    // Opcional: enviar esto también al canal de logs si quieres monitoreo extremo
+  }
   if (ctx.callbackQuery) return next();
   const userId = ctx.from?.id;
-  const chatId = ctx.chat?.id;
+  const firstName = ctx.from?.first_name || "Admin";
 
-  if (
-    userId === ADMIN_ID ||
-    authData.users.has(userId) ||
-    authData.groups.has(chatId)
-  ) {
+  // AUTOMATIZACIÓN: Si eres el dueño y no tienes nombre guardado, lo guardamos
+  if (userId === ADMIN_ID && !authData.users[userId]) {
+    authData.users[userId] = firstName;
+    saveIds();
+  }
+
+  const isAdmin = userId === ADMIN_ID || authData.users[userId];
+
+  if (isAdmin || authData.groups.has(ctx.chat?.id)) {
     return next();
   }
 
-  const expiration = authData.commonUsers[userId];
-  if (expiration) {
-    if (Date.now() < expiration) {
+  const userData = authData.commonUsers[userId];
+  if (userData) {
+    if (Date.now() < userData.expiration) {
       return next();
     } else {
       delete authData.commonUsers[userId];
@@ -99,20 +109,25 @@ const authMiddleware = async (ctx, next) => {
 
   if (ctx.updateType === "message" && ctx.message.text?.startsWith("/")) {
     return ctx.reply(
-      `🚫 Acceso denegado. ID: ${chatId}`,
+      `🚫 Acceso denegado. ID: ${ctx.chat?.id}`,
       Markup.inlineKeyboard([
-        [Markup.button.callback("📩 Solicitar Acceso", `REQ${chatId}`)],
+        [Markup.button.callback("📩 Comprar Acceso", `REQ${ctx.chat?.id}`)],
       ]),
     );
   }
 };
 
-// --- EXPORTACIÓN DE MÉTODOS ---
-const authorize = (id) => {
+// 5. MÉTODOS DE ADMINISTRACIÓN Y KEYS
+const authorize = (id, firstName = "Admin/Grupo") => {
   const numId = parseInt(id);
   if (isNaN(numId)) return false;
+
+  // Guardamos el ID en el Set como siempre
   if (numId < 0) authData.groups.add(numId);
   else authData.users.add(numId);
+
+  // OPCIONAL: Podrías crear un mapa de nombres para los admins también
+  // pero por ahora mantengamos la consistencia
   saveIds();
   return true;
 };
@@ -126,10 +141,8 @@ const unauthorize = (id) => {
 
 const generateKey = (type) => {
   const duration = DURATIONS[type] || DURATIONS["1d"];
-
-  // Generamos 8 bytes aleatorios, que al pasarlos a hex se convierten en 16 caracteres
+  // Genera 8 bytes -> 16 caracteres hexadecimales
   const randomHex = crypto.randomBytes(8).toString("hex").toUpperCase();
-
   const key = `DEV-${type.toUpperCase()}-${randomHex}`;
 
   authData.activeKeys[key] = duration;
@@ -137,11 +150,18 @@ const generateKey = (type) => {
   return key;
 };
 
-const redeemKey = (userId, key) => {
+const redeemKey = (userId, key, firstName = "Usuario") => {
   const duration = authData.activeKeys[key];
   if (duration) {
     const expiration = Date.now() + duration;
-    authData.commonUsers[userId] = expiration;
+
+    // GUARDAMOS COMO OBJETO
+    authData.commonUsers[userId] = {
+      expiration: expiration,
+      name: firstName || "Sin Nombre",
+    };
+
+    authData.notifiedUsers.delete(userId.toString());
     delete authData.activeKeys[key];
     saveKeys();
     return new Date(expiration).toLocaleString();
@@ -149,12 +169,40 @@ const redeemKey = (userId, key) => {
   return false;
 };
 
+const revokeAccess = (id) => {
+  const numId = parseInt(id);
+  if (isNaN(numId)) return false;
+
+  const deletedFromAdmins =
+    authData.users.delete(numId) || authData.groups.delete(numId);
+  if (deletedFromAdmins) saveIds();
+
+  let deletedFromKeys = false;
+  if (authData.commonUsers[numId]) {
+    delete authData.commonUsers[numId];
+    saveKeys();
+    deletedFromKeys = true;
+  }
+  return deletedFromAdmins || deletedFromKeys;
+};
+
+const clearPendingKeys = () => {
+  const count = Object.keys(authData.activeKeys).length;
+  authData.activeKeys = {};
+  saveKeys();
+  return count;
+};
+
+// 6. EXPORTACIÓN
 module.exports = {
   authMiddleware,
   authorize,
   unauthorize,
   ADMIN_ID,
   authData,
+  saveKeys, // Exportado para el monitor de expiración en index.js
   generateKey,
   redeemKey,
+  revokeAccess,
+  clearPendingKeys,
 };
