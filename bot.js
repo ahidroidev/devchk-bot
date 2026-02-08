@@ -228,7 +228,21 @@ bot.command("status", (ctx) => {
   ctx.reply("❌ No tienes acceso activo.");
 });
 
-bot.command("gen", (ctx) => Gen(ctx));
+bot.command("gen", (ctx) => {
+  const userId = ctx.from.id;
+
+  // Los admins no tienen cooldown
+  if (userId !== Auth.ADMIN_ID && !Auth.authData.users[userId]) {
+    const seconds = 10; // Tiempo de espera
+    const waiting = Auth.checkCooldown(userId, seconds);
+
+    if (waiting) {
+      return ctx.reply(`⏳ Espera ${waiting}s para usar /gen de nuevo.`);
+    }
+  }
+
+  Gen(ctx);
+});
 
 bot.command("bin", async (ctx) => {
   const txt = await bin(ctx);
@@ -541,4 +555,39 @@ async function bin(ctx) {
   } catch (error) {
     return "❌ Error consultando BIN.";
   }
+}
+
+async function Gen(ctx) {
+  const args = ctx.message.text.split(" ");
+  // El bin es el primer argumento, la cantidad el segundo
+  let comando = args[1] ? args[1].replace(/[^\d,"x","X",\|]/g, "") : "";
+  let cantidad = parseInt(args[2]) || 10;
+
+  if (comando.length < 4) {
+    return ctx.reply(
+      "⚠️ Formato: /gen [bin] [cantidad]\nEjemplo: /gen 451236 15",
+    );
+  }
+
+  // Capamos a 20 para no saturar el chat de Telegram
+  if (cantidad > 20) cantidad = 20;
+
+  let tarjetas = [];
+  for (let i = 0; i < cantidad; i++) {
+    tarjetas.push(Generador(comando));
+  }
+
+  const ccList = `<code>${tarjetas.join("\n")}</code>`;
+
+  // Consultamos el BIN una sola vez para ahorrar API
+  const binInfo = await bin(ctx);
+
+  const response =
+    `💳 <b>Tarjetas Generadas [${cantidad}]</b>\n` +
+    "━━━━━━━━━━━━━━━━━━\n" +
+    `${ccList}\n` +
+    "━━━━━━━━━━━━━━━━━━\n" +
+    `${binInfo}`;
+
+  ctx.replyWithHTML(response);
 }

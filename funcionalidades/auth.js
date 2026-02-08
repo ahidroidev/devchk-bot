@@ -22,6 +22,7 @@ let authData = {
   commonUsers: {}, // { "userId": timestamp }
   activeKeys: {}, // { "KEY": durationMs }
   notifiedUsers: new Set(),
+  cooldowns: new Set(),
 };
 
 // 3. PERSISTENCIA
@@ -216,6 +217,20 @@ const clearPendingKeys = () => {
   return count;
 };
 
+const checkCooldown = (userId, seconds) => {
+  const now = Date.now();
+  const cooldownTime = seconds * 1000;
+  const userLastUse = authData.cooldowns.get(userId) || 0;
+
+  if (now - userLastUse < cooldownTime) {
+    const remaining = ((cooldownTime - (now - userLastUse)) / 1000).toFixed(1);
+    return remaining;
+  }
+
+  authData.cooldowns.set(userId, now);
+  return false;
+};
+
 // 6. EXPORTACIÓN
 module.exports = {
   authMiddleware,
@@ -228,4 +243,5 @@ module.exports = {
   redeemKey,
   revokeAccess,
   clearPendingKeys,
+  checkCooldown,
 };
