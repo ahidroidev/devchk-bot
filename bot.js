@@ -40,7 +40,7 @@ bot.start((ctx) => {
         Markup.button.callback("🔑 Canjear Key", "REDEEM_HELP"),
         Markup.button.url("🛒 Adquirir Acceso", "https://t.me/devcrackpy"),
       ],
-      [Markup.button.callback("📩 Solicitar KEY", `REQ${ctx.chat.id}`)],
+      [Markup.button.callback("📩 Comprar KEY", `SHOW_PRICES`)],
     ]),
   );
 });
@@ -124,10 +124,37 @@ bot.command("redeem", (ctx) => {
   }
 });
 
-bot.command("testlog", async (ctx) => {
+/**bot.command("testlog", async (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
   await sendLog("🧪 Prueba de conexión exitosa desde el comando /testlog");
   ctx.reply("Intentando enviar log al canal... Revisa la consola y el canal.");
+});
+**/
+bot.command("prices", (ctx) => {
+  const pricesMessage =
+    "💳 <b>TARIFAS PREMIUM | DevChk Bot</b>\n" +
+    "━━━━━━━━━━━━━━━━━━\n\n" +
+    "🔵 <b>PLAN DIARIO</b>\n" +
+    " ├ Duración: 24 Horas\n" +
+    " └ Precio: <code>$2.00 USD</code>\n\n" +
+    "🟢 <b>PLAN SEMANAL</b>\n" +
+    " ├ Duración: 7 Días\n" +
+    " └ Precio: <code>$7.00 USD</code>\n\n" +
+    "🔴 <b>PLAN MENSUAL</b>\n" +
+    " ├ Duración: 30 Días\n" +
+    " └ Precio: <code>$20.00 USD</code>\n\n" +
+    "✨ <b>INCLUYE:</b> Acceso ilimitado a /gen, /bin, /ex y soporte técnico.\n" +
+    "━━━━━━━━━━━━━━━━━━";
+
+  ctx.replyWithHTML(
+    pricesMessage,
+    Markup.inlineKeyboard([
+      [
+        Markup.button.url("🛒 Comprar con Admin", "https://t.me/devcrackpy"),
+        Markup.button.callback("🔑 Canjear", "SHOW_PRICES"),
+      ],
+    ]),
+  );
 });
 
 // ==========================================
@@ -224,16 +251,119 @@ bot.command("ex", (ctx) => {
 
 bot.command("auth", (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
-  const targetId = ctx.message.text.split(" ")[1];
-  if (Auth.authorize(targetId)) {
-    ctx.reply(`✅ ID ${targetId} autorizado como administrador.`);
+
+  const args = ctx.message.text.split(" ");
+  const targetId = args[1];
+  // Si no pasas un nombre manualmente, el bot pone "Admin" por defecto
+  const name = args.slice(2).join(" ") || "Admin";
+
+  if (Auth.authorize(targetId, name)) {
+    ctx.replyWithHTML(
+      `✅ <b>Autorizado:</b> ${name}\n🆔 <b>ID:</b> <code>${targetId}</code>`,
+    );
     sendLog(
-      `👮 <b>Nuevo Admin Autorizado</b>\n🤴 Por Dueño: <code>${ctx.from.first_name}</code>\n➕ ID Agregado: <code>${targetId}</code>`,
+      `👮 <b>Nuevo Admin</b>\nPromovido por: ${ctx.from.first_name}\nNombre: ${name}\nID: ${targetId}`,
     );
   } else {
     ctx.reply("⚠️ Indica un ID válido.");
   }
 });
+
+bot.command("unauth", (ctx) => {
+  // Solo el Dueño principal puede quitar otros admins
+  if (ctx.from.id !== Auth.ADMIN_ID)
+    return ctx.reply("❌ Solo el Dueño puede usar este comando.");
+
+  const targetId = ctx.message.text.split(" ")[1];
+  if (!targetId) return ctx.reply("⚠️ Uso: /unauth <ID>");
+
+  if (Auth.unauthorize(targetId)) {
+    ctx.replyWithHTML(
+      `✅ Acceso revocado para el ID: <code>${targetId}</code>`,
+    );
+
+    // Log opcional para tu canal
+    sendLog(
+      `🗑️ <b>Admin Removido</b>\n🤴 Por Dueño: <code>${ctx.from.first_name}</code>\n❌ ID Quitado: <code>${targetId}</code>`,
+    );
+  } else {
+    ctx.reply("⚠️ El ID no se encuentra en la lista de autorizados.");
+  }
+});
+
+// --- COMANDO BROADCAST (MENSAJE MASIVO) ---
+bot.command("broadcast", async (ctx) => {
+  if (ctx.from.id !== Auth.ADMIN_ID) return;
+
+  const args = ctx.message.text.split(" ");
+  const message = args.slice(1).join(" ");
+
+  if (!message) return ctx.reply("⚠️ Uso: /broadcast <mensaje>");
+
+  // Unificamos todos los IDs registrados
+  const admins = Object.keys(Auth.authData.users);
+  const users = Object.keys(Auth.authData.commonUsers);
+  const allUsers = [...new Set([...admins, ...users])];
+
+  await ctx.reply(`📣 Iniciando envío masivo a ${allUsers.size} usuarios...`);
+
+  let success = 0;
+  let failed = 0;
+
+  for (const userId of allUsers) {
+    try {
+      await bot.telegram.sendMessage(
+        userId,
+        `📢 <b>NOTIFICACIÓN OFICIAL</b>\n━━━━━━━━━━━━━━━━━━\n\n${message}\n\n━━━━━━━━━━━━━━━━━━`,
+        { parse_mode: "HTML" },
+      );
+      success++;
+      // Delay de seguridad para evitar spam block (40ms entre mensajes)
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    } catch (e) {
+      failed++;
+    }
+  }
+
+  ctx.replyWithHTML(
+    `✅ <b>Envío Finalizado</b>\n\n✔️ Exitosos: <code>${success}</code>\n❌ Fallidos: <code>${failed}</code>`,
+  );
+  sendLog(
+    `📢 <b>Broadcast enviado</b> por ${ctx.from.first_name} a ${success} personas.`,
+  );
+});
+
+// --- COMANDO STATS (ESTADÍSTICAS) ---
+bot.command("stats", (ctx) => {
+  const isAllowed =
+    ctx.from.id === Auth.ADMIN_ID || Auth.authData.users[ctx.from.id];
+  if (!isAllowed) return;
+
+  const totalAdmins = Object.keys(Auth.authData.users).length;
+  const totalUsers = Object.keys(Auth.authData.commonUsers).length;
+  const pendingKeys = Object.keys(Auth.authData.activeKeys).length;
+
+  const msg =
+    "📊 <b>MÉTRICAS DEL SISTEMA</b>\n" +
+    "━━━━━━━━━━━━━━━━━━\n" +
+    "👤 <b>Usuarios Activos:</b> <code>" +
+    totalUsers +
+    "</code>\n" +
+    "👮 <b>Admins:</b> <code>" +
+    totalAdmins +
+    "</code>\n" +
+    "🔑 <b>Keys sin usar:</b> <code>" +
+    pendingKeys +
+    "</code>\n" +
+    "📡 <b>Status:</b> <code>Online 🟢</code>\n" +
+    "━━━━━━━━━━━━━━━━━━";
+
+  ctx.replyWithHTML(msg);
+});
+
+//===========================
+// --- CIERRE BLOQUE ADMINISTRACIÓN ---
+// ==========================
 
 bot.command("genkey", (ctx) => {
   const userId = ctx.from.id;
@@ -322,60 +452,44 @@ bot.command("backup", async (ctx) => {
 });
 
 // --- CALLBACK QUERIES & SOLICITUDES ---
+// Reemplaza o limpia tu bloque de callback_query por este:
 bot.on("callback_query", async (ctx) => {
   const data = ctx.callbackQuery.data;
-  const requester = ctx.from.username
-    ? `@${ctx.from.username}`
-    : ctx.from.first_name;
 
+  // 1. Manejador de Planes y Precios
+  if (data === "SHOW_PRICES") {
+    await ctx.answerCbQuery();
+    const prices =
+      "💳 <b>NUESTROS PLANES</b>\n" +
+      "━━━━━━━━━━━━━━━━━━\n" +
+      "🔵 <b>Diario:</b> $2.00 USD\n" +
+      "🟢 <b>Semanal:</b> $7.00 USD\n" +
+      "🔴 <b>Mensual:</b> $20.00 USD\n\n" +
+      "💰 <b>Métodos:</b> Binance, Saldo Forobeta, Criptos.";
+
+    return ctx.editMessageText(prices, {
+      parse_mode: "HTML",
+      ...Markup.inlineKeyboard([
+        [Markup.button.url("🛒 Hablar con Admin", "https://t.me/devcrackpy")],
+        [Markup.button.callback("🔙 Volver", "BACK_TO_DENIED")],
+      ]),
+    });
+  }
+
+  // 2. Manejador de Ayuda para Redimir
+  if (data === "REDEEM_HELP") {
+    await ctx.answerCbQuery();
+    return ctx.replyWithHTML(
+      "📝 Para activar usa: <code>/redeem TU_KEY</code>",
+    );
+  }
+
+  // 3. (OPCIONAL) Si aún quieres mantener la solicitud de acceso por botón:
   if (data.startsWith("REQ")) {
-    const targetId = data.replace("REQ", "");
-    try {
-      await bot.telegram.sendMessage(
-        Auth.ADMIN_ID,
-        `🔔 <b>Nueva Solicitud</b>\nID: <code>${targetId}</code>\nDe: ${requester}`,
-        {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback("✅ Aprobar", `OK${targetId}`),
-              Markup.button.callback("❌ Rechazar", `NO${targetId}`),
-            ],
-          ]),
-        },
-      );
-      await ctx.answerCbQuery("✅ Solicitud enviada.");
-      await ctx.editMessageText("⏳ Esperando aprobación del administrador...");
-    } catch (e) {
-      await ctx.answerCbQuery("❌ Error: Admin no disponible.");
-    }
+    // Aquí va tu lógica de REQ si aún la usas...
   }
 
-  if (data.startsWith("OK")) {
-    if (ctx.from.id !== Auth.ADMIN_ID)
-      return ctx.answerCbQuery("❌ No autorizado.");
-
-    const targetId = data.replace("OK", "");
-
-    // Intentamos obtener el nombre desde el mensaje de la solicitud
-    // (Opcional: puedes mejorar esto capturándolo en la solicitud original)
-    if (Auth.authorize(targetId)) {
-      await ctx.answerCbQuery("✅ Autorizado.");
-      await ctx.editMessageText(`✅ ID <code>${targetId}</code> aprobado.`, {
-        parse_mode: "HTML",
-      });
-    }
-  }
-
-  if (data.startsWith("NO")) {
-    if (ctx.from.id !== Auth.ADMIN_ID)
-      return ctx.answerCbQuery("❌No autorizado.");
-    const targetId = data.replace("NO", "");
-    await ctx.editMessageText(`❌ ID ${targetId} rechazado.`);
-    try {
-      await bot.telegram.sendMessage(targetId, "🚫 Solicitud rechazada.");
-    } catch (e) {}
-  }
+  // IMPORTANTE: Si ves códigos de "OK" o "NO" aquí abajo, ELIMÍNALOS.
 });
 
 const sendLog = async (msg) => {

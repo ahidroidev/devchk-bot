@@ -27,10 +27,15 @@ let authData = {
 // 3. PERSISTENCIA
 const saveIds = () => {
   const data = {
-    users: Array.from(authData.users),
-    groups: Array.from(authData.groups),
+    // Ya no usamos Array.from para users porque ahora es un objeto {}
+    users: authData.users,
+    groups: Array.from(authData.groups), // Los grupos siguen siendo Set
   };
-  fs.writeFileSync(path, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(path, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("Error al escribir authorized_ids.json:", e);
+  }
 };
 
 const saveKeys = () => {
@@ -51,22 +56,17 @@ const loadAll = () => {
   if (fs.existsSync(path)) {
     try {
       const raw = JSON.parse(fs.readFileSync(path, "utf8"));
-      if (raw.users)
-        raw.users.forEach((id) => authData.users.add(parseInt(id)));
-      if (raw.groups)
-        raw.groups.forEach((id) => authData.groups.add(parseInt(id)));
+      // Cargamos el objeto directamente, si no existe ponemos {}
+      authData.users = raw.users || {};
+
+      if (raw.groups && Array.isArray(raw.groups)) {
+        authData.groups = new Set(raw.groups.map((id) => parseInt(id)));
+      }
     } catch (e) {
       console.error("Error cargando IDs:", e);
-    }
-  }
-
-  if (fs.existsSync(keyPath)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(keyPath, "utf8"));
-      authData.commonUsers = data.commonUsers || {};
-      authData.activeKeys = data.activeKeys || {};
-    } catch (e) {
-      console.error("Error cargando Keys:", e);
+      // Si el archivo está corrupto, inicializamos limpio
+      authData.users = {};
+      authData.groups = new Set();
     }
   }
 };
@@ -107,34 +107,57 @@ const authMiddleware = async (ctx, next) => {
     }
   }
 
+  // Busca el final de tu authMiddleware en auth.js y cámbialo por esto:
+
   if (ctx.updateType === "message" && ctx.message.text?.startsWith("/")) {
-    return ctx.reply(
-      `🚫 Acceso denegado. ID: ${ctx.chat?.id}`,
+    // Este bloque va dentro de tu middleware cuando detecta que no hay acceso
+    return ctx.replyWithHTML(
+      `🚫 <b>ACCESO RESTRINGIDO</b>\n━━━━━━━━━━━━━━━━━━\n` +
+        `No cuentas con una membresía activa para usar esta función.\n\n` +
+        `🆔 ID: <code>${ctx.from.id}</code>`,
       Markup.inlineKeyboard([
-        [Markup.button.callback("📩 Comprar Acceso", `REQ${ctx.chat?.id}`)],
+        [
+          Markup.button.callback("💳 Ver Planes y Precios", "SHOW_PRICES"),
+          Markup.button.callback("🔑 Canjear Key", "REDEEM_HELP"),
+        ],
+        [Markup.button.url("👨‍💻 Soporte Directo", "https://t.me/devcrackpy")],
       ]),
     );
   }
 };
-
 // 5. MÉTODOS DE ADMINISTRACIÓN Y KEYS
-const authorize = (id, firstName = "Admin/Grupo") => {
+// Dentro de funcionalidades/auth.js
+
+const authorize = (id, firstName = "Admin") => {
   const numId = parseInt(id);
   if (isNaN(numId)) return false;
 
-  // Guardamos el ID en el Set como siempre
-  if (numId < 0) authData.groups.add(numId);
-  else authData.users.add(numId);
+  if (numId < 0) {
+    authData.groups.add(numId);
+  } else {
+    // ASIGNACIÓN PARA OBJETO (Clave: ID, Valor: Nombre)
+    authData.users[numId] = firstName;
+  }
 
-  // OPCIONAL: Podrías crear un mapa de nombres para los admins también
-  // pero por ahora mantengamos la consistencia
-  saveIds();
+  saveIds(); // Esto escribirá el cambio en el archivo
   return true;
 };
 
 const unauthorize = (id) => {
   const numId = parseInt(id);
-  const deleted = authData.users.delete(numId) || authData.groups.delete(numId);
+  if (isNaN(numId)) return false;
+
+  let deleted = false;
+  if (numId < 0) {
+    deleted = authData.groups.delete(numId);
+  } else {
+    if (authData.users[numId]) {
+      // ELIMINACIÓN PARA OBJETO
+      delete authData.users[numId];
+      deleted = true;
+    }
+  }
+
   if (deleted) saveIds();
   return deleted;
 };
