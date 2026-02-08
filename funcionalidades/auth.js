@@ -154,28 +154,33 @@ const authMiddleware = async (ctx, next) => {
 };
 
 // 5. MÉTODOS DE ADMINISTRACIÓN
-const authorize = (id, name = "Staff/Grupo", rango = "MOD") => {
+const authorize = (id, name = "Staff/Grupo", rango = "MOD", limit = 0) => {
   const numId = parseInt(id);
   if (isNaN(numId)) return { success: false, type: "ERROR" };
 
   let type = "";
   if (numId < 0) {
-    // Es un Grupo: Guardamos nombre en el objeto
     authData.groups[numId] = name || "Grupo Autorizado";
     type = "GRUPO";
-    console.log(`[AUTH] 👥 Grupo autorizado: ${name} (${numId})`);
   } else {
     const validRanges = ["ADMIN", "SELLER", "MOD"];
     type = validRanges.includes(rango.toUpperCase())
       ? rango.toUpperCase()
       : "MOD";
 
-    authData.users[numId] = { name: name, rango: type };
-    console.log(`[AUTH] 🎖️ ${type} autorizado: ${name} (${numId})`);
+    // Si es ADMIN, le asignamos su Caja Chica (limit)
+    authData.users[numId] = {
+      name: name,
+      rango: type,
+      limit: parseInt(limit) || 0, // Aquí nace la Caja Chica
+    };
+    console.log(
+      `[AUTH] 🎖️ ${type} autorizado: ${name} (${numId}) con cupo: ${limit}`,
+    );
   }
 
   saveIds();
-  return { success: true, type: type, name: name };
+  return { success: true, type: type, name: name, limit: limit };
 };
 
 const unauthorize = (id) => {
@@ -265,4 +270,5 @@ module.exports = {
   redeemKey,
   clearPendingKeys,
   checkCooldown,
+  saveIds,
 };
