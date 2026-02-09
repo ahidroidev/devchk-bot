@@ -11,6 +11,9 @@ const extra = require("./funcionalidades/extra.js");
 const consultarBIN = require("./funcionalidades/bin.js");
 const CreditsManager = require("./database/credits.js");
 
+// Alias para mantener compatibilidad en todo el código
+const Credits = CreditsManager;
+
 // --- Inicializamos el bot ---
 const Token = process.env.BOT_TOKEN;
 if (!Token) throw new Error("Falta BOT_TOKEN en las variables de entorno.");
@@ -78,7 +81,7 @@ const getUserProfile = (userId, firstName) => {
 // =======================================
 // --- Bloque de Handlers de Callbacks ---
 // =======================================
-require("./handlers/callbacks")(bot, userState, getUserProfile);
+// (Se movió la carga de handlers más abajo, después de definir sendLog)
 // ====================================
 // --- Fin de Handlers de Callbacks ---
 // ====================================
@@ -1240,7 +1243,7 @@ bot.command("clearkeys", async (ctx) => {
         `━━━━━━━━━━━━━━━━━━\n\n` +
         `🗑️ <b>Cantidad eliminada:</b> <code>${count}</code>\n` +
         `📂 <b>Estado:</b> <code>Base de datos limpia</code>\n` +
-        `👮 <b>Responsable:</b> <code>${ctx.from.first_name}</code>\n\n` +
+        `👤 <b>Responsable:</b> <code>${ctx.from.first_name}</code>\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `✅ <i>Todas las llaves no canjeadas han sido borradas permanentemente.</i>`;
 
@@ -1606,19 +1609,16 @@ const sendLog = async (msg) => {
   }
 
   try {
-    // Usamos el método directo de telegram para evitar problemas de contexto
     await bot.telegram.sendMessage(
       logChannel,
       `📝 <b>SISTEMA DE LOGS</b>\n━━━━━━━━━━━━━━━━━━\n${msg}`,
       {
         parse_mode: "HTML",
-        disable_notification: false, // Esto hará que el canal suene al recibir el log
+        disable_notification: false,
       },
     );
   } catch (e) {
-    // Si el bot no es admin o el ID está mal, aquí te dirá el porqué
     console.error("❌ ERROR EN CHANNEL LOG:", e.description || e.message);
-
     if (e.description && e.description.includes("chat not found")) {
       console.log(
         "💡 TIP: Asegúrate de que el bot sea ADMINISTRADOR del canal.",
@@ -1629,6 +1629,17 @@ const sendLog = async (msg) => {
 // =============================
 // ---  END Block SenLog    ---
 // =============================
+
+// ====================================
+// --- CARGAR HANDLERS DE CALLBACKS ---
+// ====================================
+require("./handlers/callbacks")(
+  bot,
+  userState,
+  getUserProfile,
+  CreditsManager,
+  sendLog,
+);
 
 // ==========================
 // --- Block Starting Bot ---
@@ -1666,6 +1677,23 @@ const CACHE_PATH = "./bins_cache.json";
 let binCache = {};
 if (fs.existsSync(CACHE_PATH)) {
   binCache = JSON.parse(fs.readFileSync(CACHE_PATH, "utf8"));
+}
+
+// FUNCIÓN AUXILIAR: Respuesta temporal (Se auto-elimina)
+const tempReply = async (ctx, text, seconds = 5) => {
+  try {
+    const msg = await ctx.replyWithHTML(text);
+    setTimeout(() => {
+      ctx.telegram.deleteMessage(ctx.chat.id, msg.message_id).catch(() => {});
+    }, seconds * 1000);
+  } catch (err) {
+    console.log("Error en tempReply:", err.message);
+  }
+};
+
+// FUNCIÓN GENERADOR DE TARJETAS: Retorna una tarjeta válida según Luhn
+function generarTarjeta(bin) {
+  return Generador(bin);
 }
 
 async function getBinInfo(binNum) {

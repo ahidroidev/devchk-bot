@@ -1,38 +1,31 @@
+const axios = require("axios");
+
 async function consultarBIN(bin) {
   try {
-    const url = `https://data.handyapi.com/bin/${bin}`;
+    const clean = String(bin).replace(/\D/g, "").substring(0, 6);
+    if (clean.length < 6) return { success: false, message: "BIN inválido" };
 
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
+    const url = `https://lookup.binlist.net/${clean}`;
+    const resp = await axios.get(url, {
+      headers: { "Accept-Version": "3" },
+      timeout: 7000,
     });
 
-    if (response.status === 404)
-      return { success: false, message: "BIN no encontrado" };
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+    const d = resp.data || {};
 
-    const data = await response.json();
-
-    // Verificamos si la API devolvió data real
-    if (data.Status === "SUCCESS") {
-      return {
-        success: true,
-        bin: bin,
-        brand: data.Scheme || "N/A",
-        type: data.Type || "N/A",
-        level: data.CardTier || "N/A",
-        bank: data.Issuer || "N/A",
-        country: data.Country?.Name || "N/A",
-        flag: data.Country?.A2 || "🏳️",
-      };
-    }
-
-    return { success: false };
+    return {
+      success: true,
+      bin: clean,
+      brand: (d.scheme || "N/A").toUpperCase(),
+      type: d.type || "N/A",
+      level: d.brand || d.brand || "N/A",
+      bank: d.bank?.name || "N/A",
+      country: d.country?.name || "N/A",
+      flag: d.country?.alpha2 || "🏳️",
+    };
   } catch (error) {
-    console.error("[API ERROR] Error consultando BIN:", error.message);
-    return { success: false, error: error.message };
+    console.error("[API BIN] Error:", error.message || error);
+    return { success: false, error: error.message || "Error al consultar BIN" };
   }
 }
 
