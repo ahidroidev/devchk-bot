@@ -78,14 +78,6 @@ const getUserProfile = (userId, firstName) => {
   return info;
 };
 
-// =======================================
-// --- Bloque de Handlers de Callbacks ---
-// =======================================
-// (Se movió la carga de handlers más abajo, después de definir sendLog)
-// ====================================
-// --- Fin de Handlers de Callbacks ---
-// ====================================
-
 // ============================
 // --- Inicio del Manejador ---
 // ============================
@@ -225,7 +217,16 @@ bot.command("start", async (ctx) => {
   // 4. DISEÑO VISUAL Y RESPUESTA
   const header =
     `⚡ <b>SOCIETY . E X E</b> ⚡\n` +
-    `<i>"Knowledge is power, access is everything."</i>\n`;
+    `<i>"Knowledge is power, access is everything."</i>\n\n` +
+    `🚀 <b> . E X E CHECKER V3.0</b>\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `El validador más rápido y preciso del mercado. Optimizado para profesionales.\n\n` +
+    `✨ <b>FEATURES:</b>\n` +
+    `├ ⚡ <b>Ultra-Speed:</b> Motor multi-hilo.\n` +
+    `├ 🛡️ <b>Anti-Ban:</b> Proxies residenciales.\n` +
+    `├ 🎯 <b>High Precision:</b> Gateway directo.\n` +
+    `└ 💎 <b>Soporte 24/7:</b> Update constante.\n` +
+    `━━━━━━━━━━━━━━━━━━`;
 
   await ctx.replyWithHTML(
     `${header}\n${profileInfo}`,
