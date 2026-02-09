@@ -39,17 +39,21 @@ const saveIds = () => {
 };
 
 const saveKeys = () => {
-  fs.writeFileSync(
-    keyPath,
-    JSON.stringify(
-      {
-        commonUsers: authData.commonUsers,
-        activeKeys: authData.activeKeys,
-      },
-      null,
-      2,
-    ),
-  );
+  try {
+    fs.writeFileSync(
+      keyPath,
+      JSON.stringify(
+        {
+          commonUsers: authData.commonUsers,
+          activeKeys: authData.activeKeys,
+        },
+        null,
+        2,
+      ),
+    );
+  } catch (e) {
+    console.error("Error al escribir keys.json:", e);
+  }
 };
 
 const loadAll = () => {
@@ -153,27 +157,29 @@ const authMiddleware = async (ctx, next) => {
   }
 };
 
-// 5. MÉTODOS DE ADMINISTRACIÓN
-const authorize = (id, name = "Staff/Grupo", rango = "MOD", limit = 0) => {
+// 5. MÉTODOS DE ADMINISTRACIÓN (ACTUALIZADOS)
+const authorize = (id, rango = "MOD", name = "Staff/Grupo", limit = 0) => {
   const numId = parseInt(id);
   if (isNaN(numId)) return { success: false, type: "ERROR" };
 
   let type = "";
   if (numId < 0) {
+    // Si es un grupo, name es el título del grupo
     authData.groups[numId] = name || "Grupo Autorizado";
     type = "GRUPO";
   } else {
-    const validRanges = ["ADMIN", "SELLER", "MOD"];
+    const validRanges = ["ADMIN", "SELLER", "MOD", "OWNER"];
     type = validRanges.includes(rango.toUpperCase())
       ? rango.toUpperCase()
       : "MOD";
 
-    // Si es ADMIN, le asignamos su Caja Chica (limit)
+    // Guardamos o actualizamos los datos con el nombre real obtenido
     authData.users[numId] = {
-      name: name,
+      name: name || "Usuario Desconocido",
       rango: type,
-      limit: parseInt(limit) || 0, // Aquí nace la Caja Chica
+      limit: parseInt(limit) || 0,
     };
+
     console.log(
       `[AUTH] 🎖️ ${type} autorizado: ${name} (${numId}) con cupo: ${limit}`,
     );

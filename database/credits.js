@@ -80,5 +80,36 @@ const CreditsManager = {
     Auth.saveIds(); // Importante: Guardar en authorized_ids.json
     return Auth.authData.users[adminId].limit;
   },
+
+  // --- Bloque de botones para el comando /config ---
+
+  addDirect: (userId, amount) => {
+    const qty = parseInt(amount);
+    if (!Auth.authData.commonUsers[userId]) {
+      Auth.authData.commonUsers[userId] = { credits: 0, expiration: 0 };
+    }
+    Auth.authData.commonUsers[userId].credits += qty;
+    Auth.saveKeys(); // Guardamos los cambios en el JSON
+    return Auth.authData.commonUsers[userId].credits;
+  },
+
+  // Remover créditos o resetear a cero
+  remove: (userId, amount) => {
+    if (!Auth.authData.commonUsers[userId]) return false;
+
+    if (amount === "ALL") {
+      Auth.authData.commonUsers[userId].credits = 0;
+    } else {
+      const qty = parseInt(amount);
+      Auth.authData.commonUsers[userId].credits = Math.max(
+        0,
+        Auth.authData.commonUsers[userId].credits - qty,
+      );
+    }
+
+    Auth.saveKeys(); // Guardamos los cambios
+    return Auth.authData.commonUsers[userId].credits;
+  },
 };
+
 module.exports = CreditsManager;
