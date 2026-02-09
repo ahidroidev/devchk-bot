@@ -11,3 +11,6 @@ node_modules/
 authorized_ids.json
 keys.json
 bins_cache.json
+
+# Carpetas ocultas
+.git

@@ -137,26 +137,22 @@ bot.on("text", async (ctx, next) => {
 // --- Cierre del Manejador ---
 // ============================
 
-// ==========================================
-// 1. BLOQUE PÚBLICO
-// Comandos que CUALQUIERA puede usar (Sin Key)
-// ==========================================
+// ======================
+// --- CMD FREE ---
+// ======================
 
 bot.command("start", async (ctx) => {
   const userId = ctx.from.id;
   const firstName = ctx.from.first_name;
   const username = ctx.from.username ? `@${ctx.from.username}` : "Sin Alias";
 
-  // 1. GENERAMOS EL PERFIL DINÁMICO
   const profileInfo = getUserProfile(userId, firstName);
-
-  // 2. LÓGICA DE BOTONES Y DETECCIÓN DE RANGO
   const staffData = Auth.authData.users[userId];
   const vipData = Auth.authData.commonUsers[userId];
   const isAdmin = userId === Auth.ADMIN_ID;
 
   let buttons = [];
-  let detectedRange = "FREE"; // Por defecto
+  let detectedRange = "FREE";
 
   if (isAdmin) {
     detectedRange = "OWNER 👑";
@@ -201,20 +197,12 @@ bot.command("start", async (ctx) => {
     ];
   }
 
-  // --- 3. LOGS DE ACTIVIDAD (Consola y Canal) ---
   const logAction = `USUARIO INICIÓ BOT: ${firstName} (${username}) | Rango: ${detectedRange}`;
-
-  // Console log para debug local
   console.log(`[SYSTEM] ${logAction} | ID: ${userId}`);
-
-  // Sendlog para el canal administrativo
   try {
-    await sendLog(ctx, logAction);
-  } catch (err) {
-    console.log(`[ERROR] Fallo al enviar log al canal: ${err.message}`);
-  }
+    await sendLog(logAction);
+  } catch (err) {}
 
-  // 4. DISEÑO VISUAL Y RESPUESTA
   const header =
     `⚡ <b>SOCIETY . E X E</b> ⚡\n` +
     `<i>"Knowledge is power, access is everything."</i>\n\n` +
@@ -234,7 +222,6 @@ bot.command("start", async (ctx) => {
   );
 });
 
-// --- Comando para mostrar perfil y créditos ---
 bot.command("me", async (ctx) => {
   try {
     const profile = getUserProfile(ctx.from.id, ctx.from.first_name);
@@ -246,50 +233,18 @@ bot.command("me", async (ctx) => {
       ]),
     );
   } catch (err) {
-    console.error("Error en comando /me:", err);
     ctx.reply("❌ Ocurrió un error al cargar tu perfil.");
   }
 });
 
 bot.command("id", (ctx) => {
   const user = ctx.from;
-  const firstName = user.first_name || "No definido";
-  const username = user.username ? `@${user.username}` : "Sin alias";
-  const userId = user.id;
-
-  const idMessage =
-    "👤 <b>INFORMACIÓN DE USUARIO</b>\n" +
-    "━━━━━━━━━━━━━━━━━━\n" +
-    "📝 <b>Nombre:</b> <code>" +
-    firstName +
-    "</code>\n" +
-    "🏷️ <b>Username:</b> <code>" +
-    username +
-    "</code>\n" +
-    "🆔 <b>ID:</b> <code>" +
-    userId +
-    "</code>\n" +
-    "━━━━━━━━━━━━━━━━━━";
-
+  const idMessage = `👤 <b>INFORMACIÓN DE USUARIO</b>\n━━━━━━━━━━━━━━━━━━\n📝 <b>Nombre:</b> <code>${user.first_name}</code>\n🏷️ <b>Username:</b> <code>@${user.username || "Sin alias"}</code>\n🆔 <b>ID:</b> <code>${user.id}</code>\n━━━━━━━━━━━━━━━━━━`;
   ctx.replyWithHTML(idMessage);
 });
 
 bot.command(["info", "help", "ayuda"], async (ctx) => {
-  const helpMenu =
-    `📖 <b>CENTRO DE AYUDA & COMANDOS</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n\n` +
-    `Bienvenido al manual de usuario. Selecciona una categoría para ver los detalles de cada función.\n\n` +
-    `🛠 <b>COMANDOS BÁSICOS:</b>\n` +
-    `├ <code>/start</code> - Inicio del bot\n` +
-    `├ <code>/me</code> - Ver tu perfil/status\n` +
-    `└ <code>/id</code> - Obtener tu Telegram ID\n\n` +
-    `🚀 <b>HERRAMIENTAS VIP:</b>\n` +
-    `├ <code>/gen [bin] [cant]</code> - Generador\n` +
-    `├ <code>/bin [bin]</code> - Info de banco\n` +
-    `└ <code>/ex [bin]</code> - Extrapolación\n\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `✨ <b>Powered by:</b> @DevChkBot`;
-
+  const helpMenu = `📖 <b>CENTRO DE AYUDA</b>\n━━━━━━━━━━━━━━━━━━\n\n🛠 <b>BÁSICOS:</b>\n├ <code>/start</code>\n├ <code>/me</code>\n└ <code>/id</code>\n\n🚀 <b>VIP:</b>\n├ <code>/gen</code>\n├ <code>/bin</code>\n└ <code>/ex</code>\n\n━━━━━━━━━━━━━━━━━━\n✨ <b>Powered by:</b> @DevChkBot`;
   await ctx.replyWithHTML(
     helpMenu,
     Markup.inlineKeyboard([
@@ -305,43 +260,26 @@ bot.command(["info", "help", "ayuda"], async (ctx) => {
   );
 });
 
-// --- CMD REDEEM KEYS ---
 bot.command("redeem", async (ctx) => {
   const key = ctx.message.text.split(" ")[1];
-
-  if (!key) {
+  if (!key)
     return ctx.replyWithHTML(
-      `📝 <b>SISTEMA DE KEYS</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `⚠️ <b>Uso:</b> <code>/redeem KEY-XXXX</code>\n` +
-        `━━━━━━━━━━━━━━━━━━`,
+      `📝 <b>SISTEMA DE KEYS</b>\n━━━━━━━━━━━━━━━━━━\n⚠️ <b>Uso:</b> <code>/redeem KEY-XXXX</code>\n━━━━━━━━━━━━━━━━━━`,
     );
-  }
-
-  // Llamamos a la función pasando ID, Key, Nombre y Apellido
   const expiryDate = Auth.redeemKey(
     ctx.from.id,
     key,
     ctx.from.first_name,
     ctx.from.last_name || "",
   );
-
   if (expiryDate) {
-    const successMsg =
-      `✅ <b>¡ACCESO ACTIVADO!</b>\n` +
-      `━━━━━━━━━━━━━━━━━━\n\n` +
-      `👤 <b>User:</b> <code>${ctx.from.first_name} ${ctx.from.last_name || ""}</code>\n` +
-      `📅 <b>Expira:</b> <code>${expiryDate}</code>\n\n` +
-      `🚀 <i>Ya puedes usar todas las funciones VIP.</i>\n` +
-      `━━━━━━━━━━━━━━━━━━`;
-
-    await ctx.replyWithHTML(successMsg);
-
-    // Opcional: Avisarte a ti que alguien activó una key
+    await ctx.replyWithHTML(
+      `✅ <b>¡ACCESO ACTIVADO!</b>\n━━━━━━━━━━━━━━━━━━\n👤 <b>User:</b> <code>${ctx.from.first_name}</code>\n📅 <b>Expira:</b> <code>${expiryDate}</code>\n━━━━━━━━━━━━━━━━━━`,
+    );
     bot.telegram
       .sendMessage(
         Auth.ADMIN_ID,
-        `🔔 <b>LOG:</b> El usuario <code>${ctx.from.id}</code> activó una Key.`,
+        `🔔 El usuario <code>${ctx.from.id}</code> activó una Key.`,
         { parse_mode: "HTML" },
       )
       .catch(() => {});
@@ -351,573 +289,47 @@ bot.command("redeem", async (ctx) => {
 });
 
 bot.command("prices", (ctx) => {
-  const pricesMessage =
-    "💳 <b>TARIFAS PREMIUM | DevChk Bot</b>\n" +
-    "━━━━━━━━━━━━━━━━━━\n\n" +
-    "🔵 <b>PLAN DIARIO</b>\n" +
-    " ├ Duración: 24 Horas\n" +
-    " └ Precio: <code>$2.00 USD</code>\n\n" +
-    "🟢 <b>PLAN SEMANAL</b>\n" +
-    " ├ Duración: 7 Días\n" +
-    " └ Precio: <code>$7.00 USD</code>\n\n" +
-    "🔴 <b>PLAN MENSUAL</b>\n" +
-    " ├ Duración: 30 Días\n" +
-    " └ Precio: <code>$20.00 USD</code>\n\n" +
-    "✨ <b>INCLUYE:</b> Acceso ilimitado a /gen, /bin, /ex y soporte técnico.\n" +
-    "━━━━━━━━━━━━━━━━━━";
-
+  const pricesMessage = `💳 <b>TARIFAS PREMIUM</b>\n━━━━━━━━━━━━━━━━━━\n\n🔵 <b>DIARIO:</b> <code>$2.00</code>\n🟢 <b>SEMANAL:</b> <code>$7.00</code>\n🔴 <b>MENSUAL:</b> <code>$20.00</code>\n\n━━━━━━━━━━━━━━━━━━`;
   ctx.replyWithHTML(
     pricesMessage,
     Markup.inlineKeyboard([
       [
-        Markup.button.url("🛒 Comprar con Admin", "https://t.me/devcrackpy"),
+        Markup.button.url("🛒 Comprar", "https://t.me/devcrackpy"),
         Markup.button.callback("🔑 Canjear", "SHOW_PRICES"),
       ],
     ]),
   );
 });
 
-bot.command(["status", "profile"], async (ctx) => {
-  const userId = ctx.from.id;
-  const chatId = ctx.chat.id;
-  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-
-  // Obtenemos créditos usando el manager que creamos
-  const userCredits = Credits.get(userId);
-
-  // 1. BUSCAR DATA EN EL SISTEMA
-  const staffData = Auth.authData.users[userId];
-  const vipData = Auth.authData.commonUsers[userId];
-  const isOwner = userId === Auth.ADMIN_ID;
-
-  // 2. LÓGICA DE RANGO E ICONOS
-  let rangoText = "SIN ACCESO";
-  let expText = "N/A";
-  let icon = "👤";
-
-  if (isOwner) {
-    rangoText = "OWNER / DEV";
-    expText = "PERMANENTE";
-    icon = "👑";
-  } else if (staffData) {
-    rangoText = staffData.rango || "STAFF";
-    expText = "PERMANENTE";
-    icon = rangoText === "ADMIN" ? "👮" : rangoText === "SELLER" ? "💰" : "🛡️";
-  } else if (vipData) {
-    rangoText = "PREMIUM (VIP)";
-    expText = new Date(vipData.expiration).toLocaleString();
-    icon = "💎";
-  }
-
-  // 3. CONSTRUCCIÓN DEL MENSAJE
-  let statusMsg =
-    `${icon} <b>MI PERFIL</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n\n` +
-    `📝 <b>Nombre:</b> <code>${ctx.from.first_name || "User"}</code>\n` +
-    `🆔 <b>ID:</b> <code>${userId}</code>\n` +
-    `🎖️ <b>Rango:</b> <code>${rangoText}</code>\n` +
-    `💰 <b>Créditos:</b> <code>${userCredits}</code>\n` + // <--- LÍNEA DE CRÉDITOS
-    `📅 <b>Expira:</b> <code>${expText}</code>\n`;
-
-  // 4. DETECCIÓN DE GRUPO (Validación corregida para objeto de grupos)
-  if (isGroup) {
-    const groupAuth = Auth.authData.groups[chatId]
-      ? "AUTORIZADO ✅"
-      : "SIN ACCESO ❌";
-    statusMsg +=
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `👥 <b>GRUPO ACTUAL</b>\n` +
-      `🆔 <b>ID:</b> <code>${chatId}</code>\n` +
-      `📊 <b>Estado:</b> <code>${groupAuth}</code>\n`;
-  }
-
-  statusMsg += `━━━━━━━━━━━━━━━━━━\n`;
-
-  // 5. PIE DE MENSAJE DINÁMICO
-  if (!staffData && !vipData && !isOwner) {
-    statusMsg += `🛒 <b>Adquiere una membresía:</b>`;
-  } else {
-    statusMsg += `🚀 <b>¡Disfruta tus beneficios!</b>`;
-  }
-
-  // ENVIAR CON BOTÓN DE COMPRA
-  await ctx
-    .replyWithHTML(statusMsg, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "🛒 COMPRAR CRÉDITOS / VIP",
-              url: "https://t.me/devcrackpy",
-            },
-          ],
-        ],
-      },
-    })
-    .catch((err) => {
-      console.error("❌ Error en comando Status:", err.message);
-    });
-});
-
-// --- BLOQUE DE COMANDOS DEL SISTEMA DE CRÉDITOS (FREE & VIP) ---
-bot.command("gift", async (ctx) => {
-  const args = ctx.message.text.split(" ");
-  const targetId = args[1];
-  const amount = parseInt(args[2]);
-
-  // Validación de argumentos
-  if (!targetId || isNaN(amount) || amount <= 0) {
-    return ctx.replyWithHTML(
-      "⚠️ <b>Uso:</b> <code>/gift [ID] [CANTIDAD]</code>",
-    );
-  }
-
-  // Intentamos la transferencia usando el Manager
-  const result = Credits.transfer(ctx.from.id, targetId, amount);
-
-  if (result.success) {
-    // 1. Mensaje al que envía
-    await ctx.replyWithHTML(
-      `🎁 <b>TRANSFERENCIA EXITOSA</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `📤 <b>Enviado a:</b> <code>${targetId}</code>\n` +
-        `💰 <b>Monto:</b> <code>${amount} crds</code>\n` +
-        `📉 <b>Tu nuevo saldo:</b> <code>${result.newSenderTotal}</code>\n` +
-        `━━━━━━━━━━━━━━━━━━`,
-    );
-
-    // 2. Notificar al que recibe (si el bot lo conoce)
-    ctx.telegram
-      .sendMessage(
-        targetId,
-        `🎁 ¡Has recibido <b>${amount} créditos</b> de <b>${ctx.from.first_name}</b>!`,
-        { parse_mode: "HTML" },
-      )
-      .catch(() => {
-        console.log(
-          "No se pudo notificar al receptor, tal vez no ha iniciado el bot.",
-        );
-      });
-
-    // 3. Log para ti
-    if (typeof sendLog === "function") {
-      await sendLog(
-        ctx,
-        `🎁 <b>GIFT</b>\nDe: <code>${ctx.from.id}</code>\nPara: <code>${targetId}</code>\nCantidad: ${amount}`,
-      );
-    }
-  } else {
-    // Si falla (saldo insuficiente o usuario no existe)
-    ctx.replyWithHTML(`❌ <b>Error:</b> ${result.msg}`);
-  }
-});
-
-// Comando independiente de créditos
 bot.command(["credits", "saldo", "money", "creditos"], async (ctx) => {
-  const userId = ctx.from.id;
-
-  // Usamos el manager que creamos en /database/credits.js
-  const userCredits = Credits.get(userId);
-
-  const creditsMsg =
-    `💰 <b>MI BILLETERA</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n\n` +
-    `👤 <b>Usuario:</b> <code>${ctx.from.first_name || "User"}</code>\n` +
-    `📈 <b>Saldo actual:</b> <code>${userCredits} créditos</code>\n\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `💡 <i>Usa tus créditos en comandos VIP como /bin o /gen. Cada consulta descuenta 1 crédito.</i>\n\n` +
-    `🛒 <b>¿Necesitas más saldo?</b>\n` +
-    `¡Toca el botón de abajo para recargar!`;
-
-  await ctx
-    .replyWithHTML(creditsMsg, {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🛒 COMPRAR CRÉDITOS", url: "https://t.me/devcrackpy" }],
-          [{ text: "💎 PLAN VIP ILIMITADO", url: "https://t.me/devcrackpy" }],
-        ],
-      },
-    })
-    .catch((err) => {
-      console.error("❌ Error en comando Credits:", err.message);
-    });
+  const userCredits = Credits.get(ctx.from.id);
+  const creditsMsg = `💰 <b>MI BILLETERA</b>\n━━━━━━━━━━━━━━━━━━\n👤 <b>Usuario:</b> <code>${ctx.from.first_name}</code>\n📈 <b>Saldo:</b> <code>${userCredits} créditos</code>\n━━━━━━━━━━━━━━━━━━`;
+  await ctx.replyWithHTML(
+    creditsMsg,
+    Markup.inlineKeyboard([
+      [{ text: "🛒 COMPRAR", url: "https://t.me/devcrackpy" }],
+    ]),
+  );
 });
 
-// --- Comands List Free & VIP ---
 bot.command(["cmds", "comandos"], async (ctx) => {
-  const helpMsg =
-    `📖 <b>MENÚ DE COMANDOS</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n\n` +
-    `🆓 <b>COMANDOS FREE:</b>\n` +
-    `├ <code>/start</code> - Iniciar interacción\n` +
-    `├ <code>/me</code> - Ver perfil y créditos\n` +
-    `├ <code>/id</code> - Obtener tu Telegram ID\n` +
-    `├ <code>/credits</code> - Consultar saldo\n` +
-    `└ <code>/redeem [key]</code> - Canjear VIP\n\n` +
-    `💎 <b>COMANDOS VIP / CRÉDITOS:</b>\n` +
-    `├ <code>/bin [bin]</code> - Info de BIN (1 crd)\n` +
-    `├ <code>/gen [bin]</code> - Generar tarjetas (1 crd)\n` +
-    `├ <code>/ex [bin]</code> - Extrapolación\n` +
-    `└ <code>/gift [ID] [monto]</code> - Enviar créditos\n\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `👨‍💻 <b>Soporte:</b> @devcrackpy\n` +
-    `✨ <i>Disfruta los beneficios premium.</i>`;
-
+  const helpMsg = `📖 <b>MENÚ DE COMANDOS</b>\n━━━━━━━━━━━━━━━━━━\n\n🆓 <b>FREE:</b> /start, /me, /id, /credits\n💎 <b>VIP:</b> /bin, /gen, /ex, /gift\n━━━━━━━━━━━━━━━━━━`;
   await ctx.replyWithHTML(helpMsg);
 });
 
-// ==========================================
-// 2. MONITOR DE EXPIRACIÓN (Background)
-// ==========================================
-setInterval(async () => {
-  const now = Date.now();
-  const thirtyMinutesInMs = 30 * 60 * 1000;
+// ======================
+// --- FIN CMD FREE ---
+// ======================
 
-  for (const [userId, expiration] of Object.entries(
-    Auth.authData.commonUsers,
-  )) {
-    const remaining = expiration - now;
-
-    if (remaining <= thirtyMinutesInMs && remaining > 0) {
-      if (!Auth.authData.notifiedUsers.has(userId.toString())) {
-        try {
-          await bot.telegram.sendMessage(
-            userId,
-            "⚠️ <b>Aviso de expiración</b>\n- Tu acceso expira en menos de 30 minutos.",
-            { parse_mode: "HTML" },
-          );
-          Auth.authData.notifiedUsers.add(userId.toString());
-        } catch (e) {}
-      }
-    }
-
-    if (remaining <= 0) {
-      delete Auth.authData.commonUsers[userId];
-      Auth.authData.notifiedUsers.delete(userId.toString());
-      Auth.saveKeys();
-      try {
-        await bot.telegram.sendMessage(
-          userId,
-          "🚫 <b>Tu acceso ha expirado.</b>\nUsa /redeem para activar una nueva Key.",
-          { parse_mode: "HTML" },
-        );
-      } catch (e) {}
-    }
-  }
-}, 60000);
-
-// ==========================================
-// 3. MIDDLEWARE DE PROTECCIÓN (La Barrera)
-// Todo lo que esté abajo requiere ID autorizado o KEY activa
-// ==========================================
+// ============================
+// --- Middlewares Security ---
+// ============================
 bot.use(Auth.authMiddleware);
+// ---     LOCKED     ---
+// ======================
+// --- CMD OWNER ---
+// ======================
 
-// ====================================
-// --- BLOQUE COMANDOS PROTEGIDOS   ---
-// ====================================
-
-// --- COMANDO GEN (Generador de Tarjetas) ---
-bot.command("gen", async (ctx) => {
-  const userId = ctx.from.id;
-  const args = ctx.message.text.split(" ");
-  const binInput = args[1];
-
-  // 1. VALIDACIÓN DE ENTRADA (Gratis)
-  if (!binInput || binInput.length < 6) {
-    return ctx.replyWithHTML(
-      `🎲 <b>GENERADOR DE TARJETAS</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `⚠️ <b>Uso:</b> <code>/gen 454545</code>\n\n` +
-        `<i>Ingresa el BIN para generar 10 tarjetas con su respectiva información bancaria.</i>\n` +
-        `━━━━━━━━━━━━━━━━━━`,
-    );
-  }
-
-  // 2. INTENTO DE COBRO
-  // El Staff/Owner pasan derecho. Los VIP/Common pagan 1 crédito.
-  const paid = Credits.consume(userId);
-  if (!paid) {
-    return ctx.replyWithHTML(
-      `❌ <b>SALDO INSUFICIENTE</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `La generación requiere <b>1 crédito</b>.\n` +
-        `💰 <b>Tu saldo:</b> <code>0</code>\n\n` +
-        `🛒 Compra créditos con @devcrackpy`,
-    );
-  }
-
-  const query = binInput.slice(0, 6);
-  const tempMsg = await ctx.replyWithHTML(
-    `⏳ <b>Consultando BIN y generando...</b>`,
-  );
-
-  try {
-    // 3. OBTENER INFO DEL BIN (HandyAPI)
-    const info = await consultarBIN(query);
-
-    // 4. GENERAR TARJETAS
-    const cards = [];
-    for (let i = 0; i < 10; i++) {
-      cards.push(generarTarjeta(binInput));
-    }
-    const cardList = cards.map((c) => `<code>${c}</code>`).join("\n");
-
-    if (info && info.success) {
-      const getFlag = (code) =>
-        code
-          .toUpperCase()
-          .replace(/./g, (char) =>
-            String.fromCodePoint(char.charCodeAt(0) + 127397),
-          );
-      const flagEmoji = info.flag !== "🏳️" ? getFlag(info.flag) : "🏳️";
-
-      // ESTRUCTURA DE SALIDA PREMIUM
-      const response =
-        `🎲 <b>TARJETAS GENERADAS</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `🏦 <b>Banco:</b> <code>${info.bank}</code>\n` +
-        `🌍 <b>País:</b> <code>${info.country} ${flagEmoji}</code>\n` +
-        `🏷️ <b>Nivel:</b> <code>${info.brand} ${info.level}</code>\n\n` +
-        `💳 <b>LISTA:</b>\n${cardList}\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `👤 <b>Generado por:</b> <code>${ctx.from.first_name}</code>\n` +
-        `💰 <b>Costo:</b> <code>1 Crédito</code>\n` +
-        `✨ <b>Powered by:</b> @DevChkBot`;
-
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        tempMsg.message_id,
-        null,
-        response,
-        { parse_mode: "HTML" },
-      );
-
-      // LOG DE ÉXITO
-      await sendLog(
-        ctx,
-        `🎲 <b>GENERACIÓN</b>\n👤 User: <code>${userId}</code>\n✅ BIN: <code>${query}</code> (Cobrado)`,
-      );
-    } else {
-      // 5. REEMBOLSO (Opcional: Si el BIN no existe, devolvemos el crédito)
-      Credits.add(userId, 1);
-
-      const fallback =
-        `❌ <b>BIN INVÁLIDO</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `No se encontró información para el BIN <code>${query}</code>.\n` +
-        `🔄 <b>Tu crédito ha sido devuelto.</b>\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `⚠️ <i>Asegúrate de usar un BIN real.</i>`;
-
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        tempMsg.message_id,
-        null,
-        fallback,
-        { parse_mode: "HTML" },
-      );
-    }
-  } catch (err) {
-    // 6. REEMBOLSO POR ERROR DE SISTEMA
-    Credits.add(userId, 1);
-    console.error("❌ Error en GEN:", err.message);
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      tempMsg.message_id,
-      null,
-      "⚠️ Error técnico al generar. Crédito devuelto.",
-      { parse_mode: "HTML" },
-    );
-  }
-});
-
-// --- /BIN Command ---
-bot.command("bin", async (ctx) => {
-  const userId = ctx.from.id;
-  const binInput = ctx.message.text.split(" ")[1];
-
-  // 1. VALIDACIÓN INICIAL (Gratis)
-  if (!binInput || binInput.length < 6) {
-    return tempReply(ctx, "⚠️ <b>Uso:</b> <code>/bin 454545</code>", 5);
-  }
-
-  // 2. INTENTO DE COBRO (Usa tu CreditsManager)
-  // El Staff y Owner pasan gratis automáticamente según tu lógica de consume()
-  const paid = Credits.consume(userId);
-  if (!paid) {
-    return ctx.replyWithHTML(
-      `❌ <b>SALDO INSUFICIENTE</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `Esta consulta requiere <b>1 crédito</b>.\n` +
-        `💰 <b>Tu saldo:</b> <code>0</code>\n\n` +
-        `🛒 Compra créditos con @devcrackpy`,
-    );
-  }
-
-  const query = binInput.slice(0, 6);
-  // Mensaje temporal "Cargando..."
-  const tempMsg = await ctx.replyWithHTML(
-    `⏳ <b>Consultando BIN:</b> <code>${query}</code>...`,
-  );
-
-  try {
-    // 3. CONSULTA A LA API (HandyAPI)
-    const info = await consultarBIN(query);
-
-    if (info && info.success) {
-      // Generador de banderas automático
-      const getFlag = (code) =>
-        code
-          .toUpperCase()
-          .replace(/./g, (char) =>
-            String.fromCodePoint(char.charCodeAt(0) + 127397),
-          );
-      const flagEmoji = info.flag !== "🏳️" ? getFlag(info.flag) : "🏳️";
-
-      // 4. LA SALIDA ORIGINAL (Con el costo añadido)
-      const response =
-        `🏦 <b>INFORMACIÓN DEL BIN</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `💳 <b>BIN:</b> <code>${info.bin}</code>\n` +
-        `🌍 <b>País:</b> <code>${info.country} ${flagEmoji}</code>\n` +
-        `🏢 <b>Banco:</b> <code>${info.bank}</code>\n` +
-        `🏷️ <b>Marca:</b> <code>${info.brand}</code>\n` +
-        `📊 <b>Nivel:</b> <code>${info.level}</code>\n` +
-        `🎫 <b>Tipo:</b> <code>${info.type}</code>\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `👤 <b>Consultado por:</b> <code>${ctx.from.first_name}</code>\n` +
-        `💰 <b>Costo:</b> <code>1 Crédito</code>\n` +
-        `✨ <b>Powered by:</b> @DevChkBot`;
-
-      await ctx.telegram
-        .editMessageText(ctx.chat.id, tempMsg.message_id, null, response, {
-          parse_mode: "HTML",
-        })
-        .catch(() => ctx.replyWithHTML(response));
-
-      // ENVIAR LOG DE COBRO EXITOSO
-      await sendLog(
-        ctx,
-        `💳 <b>BIN CHECK</b>\n👤 User: <code>${userId}</code>\n✅ Estado: Cobrado 1 Cr.`,
-      );
-    } else {
-      // 5. REEMBOLSO SI NO HAY INFO (Refund)
-      Credits.add(userId, 1);
-
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        tempMsg.message_id,
-        null,
-        `❌ <b>BIN NO ENCONTRADO</b>\n` +
-          `━━━━━━━━━━━━━━━━━━\n\n` +
-          `No se encontró información para <code>${query}</code>.\n` +
-          `🔄 <b>Tu crédito ha sido devuelto.</b>\n\n` +
-          `━━━━━━━━━━━━━━━━━━`,
-        { parse_mode: "HTML" },
-      );
-    }
-  } catch (err) {
-    // 6. REEMBOLSO SI HAY ERROR DE SERVIDOR (Refund)
-    Credits.add(userId, 1);
-    console.error("❌ Error en BIN:", err.message);
-
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      tempMsg.message_id,
-      null,
-      `⚠️ <b>ERROR TÉCNICO</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `Hubo un problema con la API. Tu crédito ha sido devuelto automáticamente.`,
-      { parse_mode: "HTML" },
-    );
-  }
-});
-
-// --- COMANDO EX (Extrapolación) ---
-bot.command("ex", async (ctx) => {
-  const userId = ctx.from.id;
-
-  // 1. LIMPIEZA DE INPUT
-  let input = ctx.message.text.replace(/[a-z,A-Z,/,\s]/g, "");
-
-  // 2. VALIDACIÓN DE LONGITUD (Antes de cobrar para ser justos)
-  if (input.length < 10) {
-    const errorMsg =
-      "⚠️ <b>Input muy corto.</b>\nIngresa al menos 10-12 dígitos para extrapolar.";
-    if (typeof tempReply === "function") {
-      return tempReply(ctx, errorMsg, 5);
-    } else {
-      return ctx.replyWithHTML(errorMsg);
-    }
-  }
-
-  // 3. INTENTO DE COBRO
-  // Staff y Owner pasan gratis según la lógica de tu CreditsManager
-  const paid = Credits.consume(userId);
-  if (!paid) {
-    return ctx.replyWithHTML(
-      `❌ <b>SALDO INSUFICIENTE</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `La extrapolación requiere <b>1 crédito</b>.\n` +
-        `💰 <b>Tu saldo:</b> <code>0</code>\n\n` +
-        `🛒 Compra créditos con @devcrackpy`,
-    );
-  }
-
-  try {
-    // 4. LÓGICA DE EXTRAPOLACIÓN
-    const resultadoExtra = extra(input);
-
-    if (!resultadoExtra) {
-      // Si la función extra() falla por alguna razón, devolvemos el crédito
-      Credits.add(userId, 1);
-      return ctx.replyWithHTML(
-        "❌ <b>Error en extrapolación.</b> Crédito devuelto.",
-      );
-    }
-
-    // 5. RESPUESTA FINAL (Tu diseño original con el costo añadido)
-    const response =
-      `📊 <b>EXTRAPOLACIÓN DE BIN</b>\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `📥 <b>Input:</b> <code>${input}</code>\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `✨ <b>RESULTADOS:</b>\n` +
-      `<code>${resultadoExtra}</code>\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `💰 <b>Costo:</b> <code>1 Crédito</code>\n` +
-      `💎 <b>Checked by:</b> @DevChkBot`;
-
-    await ctx.replyWithHTML(response).catch(async (err) => {
-      // Si falla el envío del mensaje, devolvemos el crédito
-      Credits.add(userId, 1);
-      console.error("❌ Error en comando EX:", err.message);
-      ctx.reply("❌ Error al formatear la extrapolación. Crédito devuelto.");
-    });
-
-    // 6. LOG DEL SISTEMA
-    if (typeof sendLog === "function") {
-      await sendLog(
-        ctx,
-        `📊 <b>EXTRAPOLACIÓN</b>\n👤 User: <code>${userId}</code>\n✅ Estado: Cobrado 1 Cr.`,
-      );
-    }
-  } catch (err) {
-    // REEMBOLSO EN CASO DE ERROR CRÍTICO
-    Credits.add(userId, 1);
-    console.error("❌ Error interno en EX:", err.message);
-    ctx.reply("❌ Ocurrió un error inesperado. Tu crédito ha sido devuelto.");
-  }
-});
-// ==================================
-// --- CIERRE BLOQUE CMDS PROTECT ---
-// ==================================
-
-// ================================
-// --- BLOQUE DE ADMINISTRACIÓN ---
-// ================================
-
-// --- COMANDO AUTH (Promover a Admin) ---
 bot.command("auth", async (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
 
@@ -961,7 +373,6 @@ bot.command("auth", async (ctx) => {
   await sendLog(ctx, `AUTH MANUAL: ${targetId} como ${rango}`);
 });
 
-// --- COMANDO UN-AUTH (Revocar acceso) ---
 bot.command("unauth", async (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
 
@@ -986,7 +397,6 @@ bot.command("unauth", async (ctx) => {
   await sendLog(ctx, `UNAUTH MANUAL: ${targetId}`);
 });
 
-// --- COMANDO BROADCAST (MENSAJE MASIVO) ---
 bot.command("bc", async (ctx) => {
   // 1. SEGURIDAD: Solo el OWNER puede hacer anuncios globales
   if (ctx.from.id !== Auth.ADMIN_ID) return;
@@ -1049,7 +459,6 @@ bot.command("bc", async (ctx) => {
   );
 });
 
-// --- COMANDO STATS (ESTADÍSTICAS) ---
 bot.command("stats", async (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
 
@@ -1101,74 +510,6 @@ bot.command("stats", async (ctx) => {
       [Markup.button.callback("🔄 REFRESCAR DATOS", "UPDATE_STATS")],
     ]),
   );
-});
-
-// --- COMANDO DE ADMINISTRACIÓN: GENERAR KEYS ---
-bot.command("genkey", async (ctx) => {
-  const userId = ctx.from.id;
-  const userStaff = Auth.authData.users[userId];
-
-  // 1. NIVEL DE SEGURIDAD (Jerarquía de Poder)
-  const isOwner = userId === Auth.ADMIN_ID;
-  const isAdmin = userStaff && userStaff.rango === "ADMIN";
-  const isSeller = userStaff && userStaff.rango === "SELLER";
-
-  if (!isOwner && !isAdmin && !isSeller) {
-    return ctx.replyWithHTML(
-      `❌ <b>ACCESO DENEGADO</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `Tu rango actual (<b>${userStaff?.rango || "USUARIO"}</b>) no tiene permisos para generar Keys de acceso.\n` +
-        `━━━━━━━━━━━━━━━━━━`,
-    );
-  }
-
-  // 2. PROCESAMIENTO DE ARGUMENTOS
-  const args = ctx.message.text.split(" ");
-  const type = args[1] ? args[1].toLowerCase() : "1d"; // Por defecto 1 día
-
-  // Validar que el tipo de duración exista en tu objeto DURATIONS de auth.js
-  const validTypes = ["1d", "1w", "1m"];
-  if (!validTypes.includes(type)) {
-    return ctx.replyWithHTML(
-      `⚠️ <b>TIPO INVÁLIDO</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `Usa uno de los siguientes formatos:\n` +
-        `├ <code>/genkey 1d</code> (Diario)\n` +
-        `├ <code>/genkey 1w</code> (Semanal)\n` +
-        `└ <code>/genkey 1m</code> (Mensual)\n` +
-        `━━━━━━━━━━━━━━━━━━`,
-    );
-  }
-
-  try {
-    // 3. GENERACIÓN DE KEY
-    const newKey = Auth.generateKey(type);
-
-    const adminMsg =
-      `🔑 <b>NUEVA KEY GENERADA</b>\n` +
-      `━━━━━━━━━━━━━━━━━━\n\n` +
-      `🎫 <b>Key:</b> <code>${newKey}</code>\n` +
-      `⏳ <b>Duración:</b> <code>${type.toUpperCase()}</code>\n` +
-      `👮 <b>Creada por:</b> <code>${ctx.from.first_name}</code>\n\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `📌 <i>Toca la key para copiarla.</i>`;
-
-    await ctx.replyWithHTML(adminMsg);
-
-    // 4. LOG DE SEGURIDAD (Opcional: Te avisa al privado cuando un Staff genera una key)
-    if (!isOwner) {
-      bot.telegram
-        .sendMessage(
-          Auth.ADMIN_ID,
-          `💰 <b>AVISO DE VENTA:</b>\nEl ${userStaff.rango} <b>${ctx.from.first_name}</b> generó una key: <code>${newKey}</code>`,
-          { parse_mode: "HTML" },
-        )
-        .catch(() => {});
-    }
-  } catch (err) {
-    console.error("❌ ERROR EN GENKEY:", err.message);
-    ctx.reply("❌ Error crítico al generar la llave.");
-  }
 });
 
 bot.command(["revokey", "revoke"], async (ctx) => {
@@ -1315,7 +656,6 @@ bot.command("list", async (ctx) => {
   await ctx.replyWithHTML(response);
 });
 
-// --- COMANDO BACKUP (RESPALDO DE BASE DE DATOS) ---
 bot.command("backup", async (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
 
@@ -1332,35 +672,6 @@ bot.command("backup", async (ctx) => {
   }
 });
 
-// --- BLOCK SYSTEM CREDITS ---
-bot.command("addcredits", async (ctx) => {
-  const args = ctx.message.text.split(" ");
-  const targetId = args[1];
-  const amount = args[2];
-
-  if (!targetId || !amount)
-    return ctx.reply("⚠️ Uso: /addcredits [ID] [CANTIDAD]");
-
-  const result = CreditsManager.add(targetId, amount, ctx.from.id);
-
-  if (result.success) {
-    ctx.replyWithHTML(
-      `✅ <b>RECARGA EXITOSA</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `👤 <b>User:</b> <code>${targetId}</code>\n` +
-        `💰 <b>Nuevo Saldo:</b> <code>${result.total}</code>\n` +
-        `📉 <b>Tu Cupo:</b> <code>${result.remaining}</code>`,
-    );
-    await sendLog(
-      ctx,
-      `💰 <b>RECARGA</b>\nOp: ${ctx.from.first_name}\nPara: ${targetId}\nMonto: ${amount}\nCupo: ${result.remaining}`,
-    );
-  } else {
-    ctx.replyWithHTML(`❌ <b>ERROR:</b> ${result.msg}`);
-  }
-});
-
-// --- Limits Credits for Staff's ---
 bot.command("setlimit", async (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
 
@@ -1387,65 +698,6 @@ bot.command("setlimit", async (ctx) => {
   }
 });
 
-bot.command(["mycaja", "cupo", "limit"], async (ctx) => {
-  const userId = ctx.from.id;
-  const adminData = Auth.authData.users[userId];
-  const isOwner = userId === Auth.ADMIN_ID;
-
-  // 1. Si es el Owner (Tú)
-  if (isOwner) {
-    return ctx.replyWithHTML(
-      `🏦 <b>BANCO CENTRAL (OWNER)</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `👑 <b>Estado:</b> <code>ACTIVO</code>\n` +
-        `📦 <b>Cupo:</b> <code>ILIMITADO (∞)</code>\n\n` +
-        `<i>Eres el emisor de los créditos del bot.</i>`,
-    );
-  }
-
-  // 2. Si es Staff (Admin/Seller)
-  if (adminData && adminData.rango === "ADMIN") {
-    const currentLimit = adminData.limit || 0;
-
-    return ctx.replyWithHTML(
-      `💼 <b>MI CAJA CHICA</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `👮 <b>Admin:</b> <code>${ctx.from.first_name}</code>\n` +
-        `📦 <b>Cupo Disponible:</b> <code>${currentLimit} créditos</code>\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `⚠️ <i>Cuando tu cupo llegue a 0, deberás solicitar recarga al Owner.</i>`,
-    );
-  }
-
-  // 3. Si no tiene rango (Usuario normal)
-  // No respondemos nada o podemos enviar un mensaje sutil
-});
-
-bot.command("remcredits", async (ctx) => {
-  if (ctx.from.id !== Auth.ADMIN_ID) return;
-
-  const [_, targetId, amount] = ctx.message.text.split(" ");
-  if (!targetId || !amount || isNaN(amount))
-    return ctx.reply("⚠️ /remcredits [ID] [CANTIDAD]");
-
-  const total = CreditsManager.remove(targetId, amount);
-
-  if (total === false) return ctx.reply("❌ El usuario no existe o no es VIP.");
-
-  ctx.replyWithHTML(
-    `✅ <b>Créditos removidos.</b> Nuevo saldo de <code>${targetId}</code>: <b>${total}</b>`,
-  );
-
-  await sendLog(
-    ctx,
-    `📉 <b>REDUCCIÓN DE CRÉDITOS</b>\n` +
-      `👮 <b>Admin:</b> ${ctx.from.first_name}\n` +
-      `👤 <b>Usuario:</b> <code>${targetId}</code>\n` +
-      `💵 <b>Quitado:</b> <code>-${amount}</code>\n` +
-      `📉 <b>Total:</b> <code>${total}</code>`,
-  );
-});
-
 bot.command("resetcredits", async (ctx) => {
   // SEGURIDAD: Solo tú (Owner) puedes ver esto
   if (ctx.from.id !== Auth.ADMIN_ID) return;
@@ -1465,47 +717,6 @@ bot.command("resetcredits", async (ctx) => {
       ],
     ]),
   );
-});
-
-bot.command(["adm", "panel", "staff"], async (ctx) => {
-  const userId = ctx.from.id;
-  const adminData = Auth.authData.users[userId];
-  const isOwner = userId === Auth.ADMIN_ID;
-
-  // Si no tiene rango administrativo, el bot ignora el comando
-  if (
-    !isOwner &&
-    (!adminData || !["ADMIN", "SELLER"].includes(adminData.rango))
-  )
-    return;
-
-  const cupo = isOwner ? "ILIMITADO (∞)" : adminData.limit || 0;
-
-  let admMsg =
-    `🛠️ <b>PANEL DE ADMINISTRACIÓN</b>\n` +
-    `━━━━━━━━━━━━━━━━━━\n\n` +
-    `👮 <b>GESTIÓN DE STAFF:</b>\n` +
-    `├ <code>/mycaja</code> - Ver tu cupo: <b>${cupo}</b>\n` +
-    `├ <code>/addcredits [ID] [CANT]</code> - Recargar saldo\n` +
-    `├ <code>/remcredits [ID] [CANT]</code> - Quitar saldo\n` +
-    `└ <code>/genkey [1d/1w/1m]</code> - Generar Key\n\n`;
-
-  // Comandos exclusivos para ti (Owner)
-  if (isOwner) {
-    admMsg +=
-      `👑 <b>CONTROL TOTAL (OWNER):</b>\n` +
-      `├ <code>/setlimit [ID] [CANT]</code> - Fondear Admin\n` +
-      `├ <code>/auth [ID] [RANGO]</code> - Dar rango Staff\n` +
-      `├ <code>/unauth [ID]</code> - Quitar rango Staff\n` +
-      `├ <code>/resetcredits</code> - Limpiar economía\n` +
-      `├ <code>/bc [ALL/VIP] [MSG]</code> - Broadcast\n` +
-      `├ <code>/stats</code> | <code>/list</code> - Reportes\n` +
-      `└ <code>/clean</code> | <code>/backup</code> - Sistema\n\n`;
-  }
-
-  admMsg += `━━━━━━━━━━━━━━━━━━\n⚙️ <b>Acceso:</b> <code>${isOwner ? "OWNER" : adminData.rango}</code>`;
-
-  await ctx.replyWithHTML(admMsg);
 });
 
 bot.command(["clean", "purgegroups"], async (ctx) => {
@@ -1570,7 +781,6 @@ bot.command(["clean", "purgegroups"], async (ctx) => {
   }
 });
 
-// --- Bloque de Configuración Maestra ---
 bot.command("config", async (ctx) => {
   if (ctx.from.id !== Auth.ADMIN_ID) return;
   delete userState[ctx.from.id];
@@ -1593,47 +803,531 @@ bot.command("config", async (ctx) => {
     ]),
   );
 });
-// --- Cierre bloque Configuración ---
 
-// ====================================
-// --- CIERRE BLOQUE ADMINISTRACIÓN ---
-// ====================================
+// ======================
+// --- FIN CMD OWNER ---
+// ======================
 
-// ====================================
-// ---  SendLog Channel Telegram    ---
-// ====================================
-const sendLog = async (msg) => {
-  const logChannel = process.env.LOG_CHANNEL_ID;
-  if (!logChannel) {
-    console.log("⚠️ No se ha configurado LOG_CHANNEL_ID en el .env");
-    return;
+// ======================
+// --- CMD STAFF ---
+// ======================
+
+bot.command("addcredits", async (ctx) => {
+  const args = ctx.message.text.split(" ");
+  const targetId = args[1];
+  const amount = args[2];
+
+  if (!targetId || !amount)
+    return ctx.reply("⚠️ Uso: /addcredits [ID] [CANTIDAD]");
+
+  const result = CreditsManager.add(targetId, amount, ctx.from.id);
+
+  if (result.success) {
+    ctx.replyWithHTML(
+      `✅ <b>RECARGA EXITOSA</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `👤 <b>User:</b> <code>${targetId}</code>\n` +
+        `💰 <b>Nuevo Saldo:</b> <code>${result.total}</code>\n` +
+        `📉 <b>Tu Cupo:</b> <code>${result.remaining}</code>`,
+    );
+    await sendLog(
+      ctx,
+      `💰 <b>RECARGA</b>\nOp: ${ctx.from.first_name}\nPara: ${targetId}\nMonto: ${amount}\nCupo: ${result.remaining}`,
+    );
+  } else {
+    ctx.replyWithHTML(`❌ <b>ERROR:</b> ${result.msg}`);
+  }
+});
+
+bot.command(["mycaja", "cupo", "limit"], async (ctx) => {
+  const userId = ctx.from.id;
+  const adminData = Auth.authData.users[userId];
+  const isOwner = userId === Auth.ADMIN_ID;
+
+  // 1. Si es el Owner (Tú)
+  if (isOwner) {
+    return ctx.replyWithHTML(
+      `🏦 <b>BANCO CENTRAL (OWNER)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `👑 <b>Estado:</b> <code>ACTIVO</code>\n` +
+        `📦 <b>Cupo:</b> <code>ILIMITADO (∞)</code>\n\n` +
+        `<i>Eres el emisor de los créditos del bot.</i>`,
+    );
   }
 
+  // 2. Si es Staff (Admin/Seller)
+  if (adminData && adminData.rango === "ADMIN") {
+    const currentLimit = adminData.limit || 0;
+
+    return ctx.replyWithHTML(
+      `💼 <b>MI CAJA CHICA</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `👮 <b>Admin:</b> <code>${ctx.from.first_name}</code>\n` +
+        `📦 <b>Cupo Disponible:</b> <code>${currentLimit} créditos</code>\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `⚠️ <i>Cuando tu cupo llegue a 0, deberás solicitar recarga al Owner.</i>`,
+    );
+  }
+});
+
+bot.command("remcredits", async (ctx) => {
+  if (ctx.from.id !== Auth.ADMIN_ID) return;
+
+  const [_, targetId, amount] = ctx.message.text.split(" ");
+  if (!targetId || !amount || isNaN(amount))
+    return ctx.reply("⚠️ /remcredits [ID] [CANTIDAD]");
+
+  const total = CreditsManager.remove(targetId, amount);
+
+  if (total === false) return ctx.reply("❌ El usuario no existe o no es VIP.");
+
+  ctx.replyWithHTML(
+    `✅ <b>Créditos removidos.</b> Nuevo saldo de <code>${targetId}</code>: <b>${total}</b>`,
+  );
+
+  await sendLog(
+    ctx,
+    `📉 <b>REDUCCIÓN DE CRÉDITOS</b>\n` +
+      `👮 <b>Admin:</b> ${ctx.from.first_name}\n` +
+      `👤 <b>Usuario:</b> <code>${targetId}</code>\n` +
+      `💵 <b>Quitado:</b> <code>-${amount}</code>\n` +
+      `📉 <b>Total:</b> <code>${total}</code>`,
+  );
+});
+
+bot.command("genkey", async (ctx) => {
+  const userId = ctx.from.id;
+  const userStaff = Auth.authData.users[userId];
+
+  // 1. NIVEL DE SEGURIDAD (Jerarquía de Poder)
+  const isOwner = userId === Auth.ADMIN_ID;
+  const isAdmin = userStaff && userStaff.rango === "ADMIN";
+  const isSeller = userStaff && userStaff.rango === "SELLER";
+
+  if (!isOwner && !isAdmin && !isSeller) {
+    return ctx.replyWithHTML(
+      `❌ <b>ACCESO DENEGADO</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `Tu rango actual (<b>${userStaff?.rango || "USUARIO"}</b>) no tiene permisos para generar Keys de acceso.\n` +
+        `━━━━━━━━━━━━━━━━━━`,
+    );
+  }
+
+  // 2. PROCESAMIENTO DE ARGUMENTOS
+  const args = ctx.message.text.split(" ");
+  const type = args[1] ? args[1].toLowerCase() : "1d"; // Por defecto 1 día
+
+  const validTypes = ["1d", "1w", "1m"];
+  if (!validTypes.includes(type)) {
+    return ctx.replyWithHTML(
+      `⚠️ <b>TIPO INVÁLIDO</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `Usa uno de los siguientes formatos:\n` +
+        `├ <code>/genkey 1d</code> (Diario)\n` +
+        `├ <code>/genkey 1w</code> (Semanal)\n` +
+        `└ <code>/genkey 1m</code> (Mensual)\n` +
+        `━━━━━━━━━━━━━━━━━━`,
+    );
+  }
+
+  try {
+    const newKey = Auth.generateKey(type);
+
+    const adminMsg =
+      `🔑 <b>NUEVA KEY GENERADA</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      `🎫 <b>Key:</b> <code>${newKey}</code>\n` +
+      `⏳ <b>Duración:</b> <code>${type.toUpperCase()}</code>\n` +
+      `👮 <b>Creada por:</b> <code>${ctx.from.first_name}</code>\n\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `📌 <i>Toca la key para copiarla.</i>`;
+
+    await ctx.replyWithHTML(adminMsg);
+
+    if (!isOwner) {
+      bot.telegram
+        .sendMessage(
+          Auth.ADMIN_ID,
+          `💰 <b>AVISO DE VENTA:</b>\nEl ${userStaff.rango} <b>${ctx.from.first_name}</b> generó una key: <code>${newKey}</code>`,
+          { parse_mode: "HTML" },
+        )
+        .catch(() => {});
+    }
+  } catch (err) {
+    console.error("❌ ERROR EN GENKEY:", err.message);
+    ctx.reply("❌ Error crítico al generar la llave.");
+  }
+});
+
+bot.command(["adm", "panel", "staff"], async (ctx) => {
+  const userId = ctx.from.id;
+  const adminData = Auth.authData.users[userId];
+  const isOwner = userId === Auth.ADMIN_ID;
+
+  if (
+    !isOwner &&
+    (!adminData || !["ADMIN", "SELLER"].includes(adminData.rango))
+  )
+    return;
+
+  const cupo = isOwner ? "ILIMITADO (∞)" : adminData.limit || 0;
+
+  let admMsg =
+    `🛠️ <b>PANEL DE ADMINISTRACIÓN</b>\n` +
+    `━━━━━━━━━━━━━━━━━━\n\n` +
+    `👮 <b>GESTIÓN DE STAFF:</b>\n` +
+    `├ <code>/mycaja</code> - Ver tu cupo: <b>${cupo}</b>\n` +
+    `├ <code>/addcredits [ID] [CANT]</code> - Recargar saldo\n` +
+    `├ <code>/remcredits [ID] [CANT]</code> - Quitar saldo\n` +
+    `└ <code>/genkey [1d/1w/1m]</code> - Generar Key\n\n`;
+
+  if (isOwner) {
+    admMsg +=
+      `👑 <b>CONTROL TOTAL (OWNER):</b>\n` +
+      `├ <code>/setlimit [ID] [CANT]</code> - Fondear Admin\n` +
+      `├ <code>/auth [ID] [RANGO]</code> - Dar rango Staff\n` +
+      `├ <code>/unauth [ID]</code> - Quitar rango Staff\n` +
+      `├ <code>/resetcredits</code> - Limpiar economía\n` +
+      `├ <code>/bc [ALL/VIP] [MSG]</code> - Broadcast\n` +
+      `├ <code>/stats</code> | <code>/list</code> - Reportes\n` +
+      `└ <code>/clean</code> | <code>/backup</code> - Sistema\n\n`;
+  }
+
+  admMsg += `━━━━━━━━━━━━━━━━━━\n⚙️ <b>Acceso:</b> <code>${isOwner ? "OWNER" : adminData.rango}</code>`;
+
+  await ctx.replyWithHTML(admMsg);
+});
+
+// ======================
+// --- FIN CMD STAFF ---
+// ======================
+
+// ======================
+// --- CMD VIP ---
+// ======================
+
+bot.command("gen", async (ctx) => {
+  const userId = ctx.from.id;
+  const args = ctx.message.text.split(" ");
+  const binInput = args[1];
+
+  if (!binInput || binInput.length < 6) {
+    return ctx.replyWithHTML(
+      `🎲 <b>GENERADOR DE TARJETAS</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `⚠️ <b>Uso:</b> <code>/gen 454545</code>\n\n` +
+        `<i>Ingresa el BIN para generar 10 tarjetas con su respectiva información bancaria.</i>\n` +
+        `━━━━━━━━━━━━━━━━━━`,
+    );
+  }
+
+  const paid = Credits.consume(userId);
+  if (!paid) {
+    return ctx.replyWithHTML(
+      `❌ <b>SALDO INSUFICIENTE</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `La generación requiere <b>1 crédito</b>.\n` +
+        `💰 <b>Tu saldo:</b> <code>0</code>\n\n` +
+        `🛒 Compra créditos con @devcrackpy`,
+    );
+  }
+
+  const query = binInput.slice(0, 6);
+  const tempMsg = await ctx.replyWithHTML(
+    `⏳ <b>Consultando BIN y generando...</b>`,
+  );
+
+  try {
+    const info = await consultarBIN(query);
+    const cards = [];
+    for (let i = 0; i < 10; i++) {
+      cards.push(generarTarjeta(binInput));
+    }
+    const cardList = cards.map((c) => `<code>${c}</code>`).join("\n");
+
+    if (info && info.success) {
+      const getFlag = (code) =>
+        code
+          .toUpperCase()
+          .replace(/./g, (char) =>
+            String.fromCodePoint(char.charCodeAt(0) + 127397),
+          );
+      const flagEmoji = info.flag !== "🏳️" ? getFlag(info.flag) : "🏳️";
+
+      const response =
+        `🎲 <b>TARJETAS GENERADAS</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `🏦 <b>Banco:</b> <code>${info.bank}</code>\n` +
+        `🌍 <b>País:</b> <code>${info.country} ${flagEmoji}</code>\n` +
+        `🏷️ <b>Nivel:</b> <code>${info.brand} ${info.level}</code>\n\n` +
+        `💳 <b>LISTA:</b>\n${cardList}\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `👤 <b>Generado por:</b> <code>${ctx.from.first_name}</code>\n` +
+        `💰 <b>Costo:</b> <code>1 Crédito</code>\n` +
+        `✨ <b>Powered by:</b> @DevChkBot`;
+
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        tempMsg.message_id,
+        null,
+        response,
+        { parse_mode: "HTML" },
+      );
+
+      await sendLog(
+        ctx,
+        `🎲 <b>GENERACIÓN</b>\n👤 User: <code>${userId}</code>\n✅ BIN: <code>${query}</code> (Cobrado)`,
+      );
+    } else {
+      Credits.add(userId, 1);
+      const fallback =
+        `❌ <b>BIN INVÁLIDO</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `No se encontró información para el BIN <code>${query}</code>.\n` +
+        `🔄 <b>Tu crédito ha sido devuelto.</b>\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `⚠️ <i>Asegúrate de usar un BIN real.</i>`;
+
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        tempMsg.message_id,
+        null,
+        fallback,
+        { parse_mode: "HTML" },
+      );
+    }
+  } catch (err) {
+    Credits.add(userId, 1);
+    console.error("❌ Error en GEN:", err.message);
+    await ctx.telegram.editMessageText(
+      ctx.chat.id,
+      tempMsg.message_id,
+      null,
+      "⚠️ Error técnico al generar. Crédito devuelto.",
+      { parse_mode: "HTML" },
+    );
+  }
+});
+
+bot.command("bin", async (ctx) => {
+  const userId = ctx.from.id;
+  const binInput = ctx.message.text.split(" ")[1];
+
+  if (!binInput || binInput.length < 6) {
+    return tempReply(ctx, "⚠️ <b>Uso:</b> <code>/bin 454545</code>", 5);
+  }
+
+  const paid = Credits.consume(userId);
+  if (!paid) {
+    return ctx.replyWithHTML(
+      `❌ <b>SALDO INSUFICIENTE</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `Esta consulta requiere <b>1 crédito</b>.\n` +
+        `💰 <b>Tu saldo:</b> <code>0</code>\n\n` +
+        `🛒 Compra créditos con @devcrackpy`,
+    );
+  }
+
+  const query = binInput.slice(0, 6);
+  const tempMsg = await ctx.replyWithHTML(
+    `⏳ <b>Consultando BIN:</b> <code>${query}</code>...`,
+  );
+
+  try {
+    const info = await consultarBIN(query);
+    if (info && info.success) {
+      const getFlag = (code) =>
+        code
+          .toUpperCase()
+          .replace(/./g, (char) =>
+            String.fromCodePoint(char.charCodeAt(0) + 127397),
+          );
+      const flagEmoji = info.flag !== "🏳️" ? getFlag(info.flag) : "🏳️";
+
+      const response =
+        `🏦 <b>INFORMACIÓN DEL BIN</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `💳 <b>BIN:</b> <code>${info.bin}</code>\n` +
+        `🌍 <b>País:</b> <code>${info.country} ${flagEmoji}</code>\n` +
+        `🏢 <b>Banco:</b> <code>${info.bank}</code>\n` +
+        `🏷️ <b>Marca:</b> <code>${info.brand}</code>\n` +
+        `📊 <b>Nivel:</b> <code>${info.level}</code>\n` +
+        `🎫 <b>Tipo:</b> <code>${info.type}</code>\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `👤 <b>Consultado por:</b> <code>${ctx.from.first_name}</code>\n` +
+        `💰 <b>Costo:</b> <code>1 Crédito</code>\n` +
+        `✨ <b>Powered by:</b> @DevChkBot`;
+
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        tempMsg.message_id,
+        null,
+        response,
+        { parse_mode: "HTML" },
+      );
+      await sendLog(
+        ctx,
+        `💳 <b>BIN CHECK</b>\n👤 User: <code>${userId}</code>\n✅ Estado: Cobrado 1 Cr.`,
+      );
+    } else {
+      Credits.add(userId, 1);
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        tempMsg.message_id,
+        null,
+        `❌ <b>BIN NO ENCONTRADO</b>\n━━━━━━━━━━━━━━━━━━\n\nNo se encontró información para <code>${query}</code>.\n🔄 <b>Tu crédito ha sido devuelto.</b>\n\n━━━━━━━━━━━━━━━━━━`,
+        { parse_mode: "HTML" },
+      );
+    }
+  } catch (err) {
+    Credits.add(userId, 1);
+    await ctx.telegram.editMessageText(
+      ctx.chat.id,
+      tempMsg.message_id,
+      null,
+      `⚠️ <b>ERROR TÉCNICO</b>\n━━━━━━━━━━━━━━━━━━\n\nHubo un problema con la API. Tu crédito ha sido devuelto automáticamente.`,
+      { parse_mode: "HTML" },
+    );
+  }
+});
+
+bot.command("ex", async (ctx) => {
+  const userId = ctx.from.id;
+  let input = ctx.message.text.replace(/[a-z,A-Z,/,\s]/g, "");
+
+  if (input.length < 10) {
+    const errorMsg =
+      "⚠️ <b>Input muy corto.</b>\nIngresa al menos 10-12 dígitos para extrapolar.";
+    return ctx.replyWithHTML(errorMsg);
+  }
+
+  const paid = Credits.consume(userId);
+  if (!paid) {
+    return ctx.replyWithHTML(
+      `❌ <b>SALDO INSUFICIENTE</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `La extrapolación requiere <b>1 crédito</b>.\n` +
+        `💰 <b>Tu saldo:</b> <code>0</code>\n\n` +
+        `🛒 Compra créditos con @devcrackpy`,
+    );
+  }
+
+  try {
+    const resultadoExtra = extra(input);
+    if (!resultadoExtra) {
+      Credits.add(userId, 1);
+      return ctx.replyWithHTML(
+        "❌ <b>Error en extrapolación.</b> Crédito devuelto.",
+      );
+    }
+
+    const response =
+      `📊 <b>EXTRAPOLACIÓN DE BIN</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `📥 <b>Input:</b> <code>${input}</code>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `✨ <b>RESULTADOS:</b>\n` +
+      `<code>${resultadoExtra}</code>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `💰 <b>Costo:</b> <code>1 Crédito</code>\n` +
+      `💎 <b>Checked by:</b> @DevChkBot`;
+
+    await ctx.replyWithHTML(response);
+    await sendLog(
+      ctx,
+      `📊 <b>EXTRAPOLACIÓN</b>\n👤 User: <code>${userId}</code>\n✅ Estado: Cobrado 1 Cr.`,
+    );
+  } catch (err) {
+    Credits.add(userId, 1);
+    ctx.reply("❌ Ocurrió un error inesperado. Tu crédito ha sido devuelto.");
+  }
+});
+
+bot.command("gift", async (ctx) => {
+  const args = ctx.message.text.split(" ");
+  const targetId = args[1];
+  const amount = parseInt(args[2]);
+
+  if (!targetId || isNaN(amount) || amount <= 0) {
+    return ctx.replyWithHTML(
+      "⚠️ <b>Uso:</b> <code>/gift [ID] [CANTIDAD]</code>",
+    );
+  }
+
+  const result = Credits.transfer(ctx.from.id, targetId, amount);
+  if (result.success) {
+    await ctx.replyWithHTML(
+      `🎁 <b>TRANSFERENCIA EXITOSA</b>\n━━━━━━━━━━━━━━━━━━\n📤 <b>Enviado a:</b> <code>${targetId}</code>\n💰 <b>Monto:</b> <code>${amount} crds</code>\n📉 <b>Tu nuevo saldo:</b> <code>${result.newSenderTotal}</code>\n━━━━━━━━━━━━━━━━━━`,
+    );
+    ctx.telegram
+      .sendMessage(
+        targetId,
+        `🎁 ¡Has recibido <b>${amount} créditos</b> de <b>${ctx.from.first_name}</b>!`,
+        { parse_mode: "HTML" },
+      )
+      .catch(() => {});
+    await sendLog(
+      ctx,
+      `🎁 <b>GIFT</b>\nDe: <code>${ctx.from.id}</code>\nPara: <code>${targetId}</code>\nCantidad: ${amount}`,
+    );
+  } else {
+    ctx.replyWithHTML(`❌ <b>Error:</b> ${result.msg}`);
+  }
+});
+
+// ======================
+// --- FIN CMD VIP ---
+// ======================
+
+// ==========================================
+// MONITOR DE EXPIRACIÓN Y OTROS SISTEMAS
+// ==========================================
+
+setInterval(async () => {
+  const now = Date.now();
+  for (const [userId, expiration] of Object.entries(
+    Auth.authData.commonUsers,
+  )) {
+    const remaining = expiration - now;
+    if (remaining <= 30 * 60 * 1000 && remaining > 0) {
+      if (!Auth.authData.notifiedUsers.has(userId.toString())) {
+        try {
+          await bot.telegram.sendMessage(
+            userId,
+            "⚠️ Tu acceso expira en menos de 30 min.",
+            { parse_mode: "HTML" },
+          );
+          Auth.authData.notifiedUsers.add(userId.toString());
+        } catch (e) {}
+      }
+    }
+    if (remaining <= 0) {
+      delete Auth.authData.commonUsers[userId];
+      Auth.authData.notifiedUsers.delete(userId.toString());
+      Auth.saveKeys();
+      try {
+        await bot.telegram.sendMessage(userId, "🚫 Tu acceso ha expirado.", {
+          parse_mode: "HTML",
+        });
+      } catch (e) {}
+    }
+  }
+}, 60000);
+
+bot.use(Auth.authMiddleware);
+
+const sendLog = async (msg) => {
+  const logChannel = process.env.LOG_CHANNEL_ID;
+  if (!logChannel) return;
   try {
     await bot.telegram.sendMessage(
       logChannel,
       `📝 <b>SISTEMA DE LOGS</b>\n━━━━━━━━━━━━━━━━━━\n${msg}`,
-      {
-        parse_mode: "HTML",
-        disable_notification: false,
-      },
+      { parse_mode: "HTML" },
     );
-  } catch (e) {
-    console.error("❌ ERROR EN CHANNEL LOG:", e.description || e.message);
-    if (e.description && e.description.includes("chat not found")) {
-      console.log(
-        "💡 TIP: Asegúrate de que el bot sea ADMINISTRADOR del canal.",
-      );
-    }
-  }
+  } catch (e) {}
 };
-// =============================
-// ---  END Block SenLog    ---
-// =============================
 
-// ====================================
-// --- CARGAR HANDLERS DE CALLBACKS ---
-// ====================================
 require("./handlers/callbacks")(
   bot,
   userState,
@@ -1642,80 +1336,65 @@ require("./handlers/callbacks")(
   sendLog,
 );
 
-// ==========================
-// --- Block Starting Bot ---
-// ==========================
 const iniciarBot = async (reintentos = 0) => {
   try {
-    console.log("🚀 Intentando conectar con Telegram...");
+    console.log("🚀 Conectando...");
     await bot.launch();
     console.log("✅ DevChk Bot en línea.");
   } catch (error) {
-    const delay = Math.min(30000, (reintentos + 1) * 5000); // Máximo 30 seg de espera
-    console.error(
-      `❌ Error de conexión (${error.code || "TIMEOUT"}): ${error.message}`,
-    );
-    console.log(`🔄 Reintentando en ${delay / 1000} segundos...`);
-
+    const delay = Math.min(30000, (reintentos + 1) * 5000);
     setTimeout(() => iniciarBot(reintentos + 1), delay);
   }
 };
 
-// Manejo de señales del sistema para cierre limpio
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
-// Arrancar
 iniciarBot();
 
-// =====================================
-// --- FUNCIONES AUXILIARES (ÚNICAS) ---
-// =====================================
+// --- FUNCIONES AUXILIARES ---
 const fs = require("fs");
-const CACHE_PATH = "./bins_cache.json";
-
-// Cargar caché al iniciar
-let binCache = {};
-if (fs.existsSync(CACHE_PATH)) {
-  binCache = JSON.parse(fs.readFileSync(CACHE_PATH, "utf8"));
-}
-
-// FUNCIÓN AUXILIAR: Respuesta temporal (Se auto-elimina)
 const tempReply = async (ctx, text, seconds = 5) => {
   try {
     const msg = await ctx.replyWithHTML(text);
     setTimeout(() => {
       ctx.telegram.deleteMessage(ctx.chat.id, msg.message_id).catch(() => {});
     }, seconds * 1000);
-  } catch (err) {
-    console.log("Error en tempReply:", err.message);
-  }
+  } catch (err) {}
 };
 
-// FUNCIÓN GENERADOR DE TARJETAS: Retorna una tarjeta válida según Luhn
 function generarTarjeta(bin) {
   return Generador(bin);
 }
 
 async function getBinInfo(binNum) {
   const cleanBin = binNum.toString().replace(/\D/g, "").substring(0, 6);
+
   if (cleanBin.length < 6) return "⚠️ <b>BIN:</b> Formato inválido.";
 
   try {
     const response = await axios.get(`https://lookup.binlist.net/${cleanBin}`, {
       headers: { "Accept-Version": "3" },
+
       timeout: 5000,
     });
 
     const d = response.data;
 
     // Extraemos y formateamos con valores por defecto
+
     const brand = (d.scheme || "Desconocido").toUpperCase();
+
     const type = (d.type || "N/A").toUpperCase(); // DEBIT o CREDIT
+
     const level = (d.brand || "STANDARD").toUpperCase(); // PLATINUM, BUSINESS, etc.
+
     const bank = (d.bank?.name || "Emisor Desconocido").replace(/[&<>]/g, "");
+
     const country = d.country?.name || "Global";
+
     const emoji = d.country?.emoji || "🌐";
+
     const currency = d.country?.currency || "N/A";
 
     return (
@@ -1734,6 +1413,7 @@ async function getBinInfo(binNum) {
     );
   } catch (error) {
     console.log(`[LOG] Fallo BIN ${cleanBin}: ${error.message}`);
+
     return (
       `🔍 <b>CONSULTA DE BIN</b>\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
