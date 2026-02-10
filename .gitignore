@@ -11,6 +11,20 @@ node_modules/
 authorized_ids.json
 keys.json
 bins_cache.json
+contexto.js
+PROYECTO_COMPLETO.txt
 
 # Carpetas ocultas
 .git
+
+# Base de datos (Aquí están tus usuarios y keys)
+society.db
+society.db-shm
+society.db-wal
+
+# Logs de errores
+npm-debug.log
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db

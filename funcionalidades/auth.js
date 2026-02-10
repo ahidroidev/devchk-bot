@@ -1,9 +1,7 @@
-const fs = require("fs");
+// funcionalidades/auth.js
 require("dotenv").config();
 const crypto = require("crypto");
-
-const path = "./authorized_ids.json";
-const keyPath = "./keys.json";
+const db = require("../database/connection.js");
 
 const ADMIN_ID = parseInt(process.env.ADMIN_ID);
 
@@ -13,58 +11,106 @@ const DURATIONS = {
   "1m": 30 * 24 * 60 * 60 * 1000,
 };
 
-let authData = {
-  users: {}, // STAFF: { id: { name, rango, limit, monthlyFlow } } <--- AÑADIDO FLOW
-  commonUsers: {}, // VIPS:  { id: { expiration, name, credits, totalBought, totalSpent, keyUsed, keyType } } <--- AÑADIDO STATS
-  activeKeys: {},
-  bannedUsers: {},
-  notifiedUsers: new Set(),
-  cooldowns: new Map(),
+// --- CONSULTAS SQL PREPARADAS ---
+const sql = {
+  getStaff: db.prepare("SELECT * FROM staff WHERE id = ?"),
+  getVip: db.prepare("SELECT * FROM vips WHERE id = ?"),
+  getBan: db.prepare("SELECT * FROM bans WHERE id = ?"),
+  getKey: db.prepare("SELECT * FROM keys WHERE code = ?"),
+
+  insertStaff: db.prepare(
+    "INSERT OR REPLACE INTO staff (id, role, name, limit_amount, monthly_flow) VALUES (?, ?, ?, ?, ?)",
+  ),
+  deleteStaff: db.prepare("DELETE FROM staff WHERE id = ?"),
+
+  insertVip: db.prepare(
+    "INSERT OR REPLACE INTO vips (id, name, credits, expiration, total_bought, total_spent, key_used, key_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ),
+  deleteVip: db.prepare("DELETE FROM vips WHERE id = ?"),
+
+  insertBan: db.prepare(
+    "INSERT OR REPLACE INTO bans (id, reason, banned_at) VALUES (?, ?, ?)",
+  ),
+  deleteBan: db.prepare("DELETE FROM bans WHERE id = ?"),
+
+  insertKey: db.prepare(
+    "INSERT INTO keys (code, duration, created_at) VALUES (?, ?, ?)",
+  ),
+  deleteKey: db.prepare("DELETE FROM keys WHERE code = ?"),
+
+  allKeys: db.prepare("SELECT * FROM keys"),
+  allStaff: db.prepare("SELECT * FROM staff"),
+  allVips: db.prepare("SELECT * FROM vips"),
 };
 
-// --- PERSISTENCIA ---
-const saveIds = () => {
-  try {
-    const dataToSave = {
-      users: authData.users,
-      commonUsers: authData.commonUsers,
-      bannedUsers: authData.bannedUsers,
-    };
-    fs.writeFileSync(path, JSON.stringify(dataToSave, null, 2));
-  } catch (e) {
-    console.error("Error guardando IDs:", e);
-  }
+// --- FUNCIONES DE OBTENCIÓN MASIVA (Para Listas) ---
+const getAllKeys = () => {
+  const keys = {};
+  sql.allKeys.all().forEach((k) => (keys[k.code] = k.duration));
+  return keys;
 };
 
-const saveKeys = () => {
-  try {
-    fs.writeFileSync(keyPath, JSON.stringify(authData.activeKeys, null, 2));
-  } catch (e) {
-    console.error("Error guardando Keys:", e);
-  }
+const getAllStaff = () => {
+  const staff = {};
+  // Mapeamos los campos de SQL a tu estructura original (rango, limit, monthlyFlow)
+  sql.allStaff
+    .all()
+    .forEach(
+      (u) =>
+        (staff[u.id] = {
+          name: u.name,
+          rango: u.role,
+          limit: u.limit_amount,
+          monthlyFlow: u.monthly_flow,
+        }),
+    );
+  return staff;
 };
 
-// Cargar DB
-try {
-  if (fs.existsSync(path)) {
-    const data = JSON.parse(fs.readFileSync(path));
-    authData.users = data.users || {};
-    authData.commonUsers = data.commonUsers || {};
-    authData.bannedUsers = data.bannedUsers || {};
-  }
-  if (fs.existsSync(keyPath)) {
-    authData.activeKeys = JSON.parse(fs.readFileSync(keyPath));
-  }
-} catch (e) {
-  console.error("Error cargando DB:", e);
-}
+const getAllVips = () => {
+  const vips = {};
+  sql.allVips
+    .all()
+    .forEach(
+      (u) =>
+        (vips[u.id] = {
+          name: u.name,
+          credits: u.credits,
+          expiration: u.expiration,
+          totalBought: u.total_bought,
+          totalSpent: u.total_spent,
+          keyUsed: u.key_used,
+          keyType: u.key_type,
+        }),
+    );
+  return vips;
+};
 
-// --- ROLES ---
+// --- OBJETO HÍBRIDO (Mantiene compatibilidad con tu código visual) ---
+const authData = {
+  get activeKeys() {
+    return getAllKeys();
+  },
+  get users() {
+    return getAllStaff();
+  },
+  get commonUsers() {
+    return getAllVips();
+  },
+  notifiedUsers: new Set(), // Memoria RAM
+};
+
+// --- SISTEMA DE ROLES ---
 const getRole = (userId) => {
   const uid = String(userId);
   if (uid === String(ADMIN_ID)) return "OWNER";
-  if (authData.users[uid]) return authData.users[uid].rango;
-  if (authData.commonUsers[uid]?.expiration > Date.now()) return "VIP";
+
+  const staff = sql.getStaff.get(uid);
+  if (staff) return staff.role;
+
+  const vip = sql.getVip.get(uid);
+  if (vip && vip.expiration > Date.now()) return "VIP";
+
   return "FREE";
 };
 
@@ -76,77 +122,75 @@ const canManage = (issuerId, targetId) => {
   return hierarchy[issuerRole] > hierarchy[targetRole];
 };
 
-// --- ACCIONES DB ---
+// --- ACCIONES DE GESTIÓN ---
 const authorize = (id, rango, name) => {
-  // Inicializamos al Staff con flujo 0 y límite por defecto (ej: 500)
-  authData.users[id] = {
-    rango,
-    name,
-    limit: rango === "ADMIN" ? 999999 : 500, // Límite de caja chica inicial
-    monthlyFlow: 0,
-  };
-  if (authData.commonUsers[id]) delete authData.commonUsers[id];
-  saveIds();
+  const limit = rango === "ADMIN" ? 999999 : 500; // Límite por defecto
+  sql.insertStaff.run(String(id), rango, name, limit, 0);
+  sql.deleteVip.run(String(id));
+  sql.deleteBan.run(String(id));
 };
 
 const unauthorize = (id) => {
-  if (authData.users[id]) delete authData.users[id];
-  if (authData.commonUsers[id]) delete authData.commonUsers[id];
-  saveIds();
+  sql.deleteStaff.run(String(id));
+  sql.deleteVip.run(String(id));
 };
 
 const banUserDB = (id, reason) => {
   unauthorize(id);
-  authData.bannedUsers[id] = reason;
-  saveIds();
+  sql.insertBan.run(String(id), reason, Date.now());
 };
 
 const unbanUserDB = (id) => {
-  if (authData.bannedUsers[id]) delete authData.bannedUsers[id];
-  saveIds();
+  sql.deleteBan.run(String(id));
 };
 
-const isBanned = (id) => !!authData.bannedUsers[id];
+const isBanned = (id) => !!sql.getBan.get(String(id));
 
-// --- KEYS ---
+// --- GESTIÓN DE KEYS ---
 const generateKey = (type) => {
   const duration = DURATIONS[type] || DURATIONS["1d"];
   const randomHex = crypto.randomBytes(4).toString("hex").toUpperCase();
   const key = `DEV-${type.toUpperCase()}-${randomHex}`;
-  authData.activeKeys[key] = duration;
-  saveKeys();
+  sql.insertKey.run(key, duration, Date.now());
   return key;
 };
 
-// --- REDEEM CON TRACKING (NUEVO) ---
 const redeemKey = (userId, key, firstName = "Usuario") => {
-  const duration = authData.activeKeys[key];
-  if (duration) {
-    const expiration = Date.now() + duration;
-    const currentUser = authData.commonUsers[userId] || {};
+  const keyData = sql.getKey.get(key);
 
-    // Determinamos tipo de key basado en duración
-    let type = "Custom";
-    if (duration === DURATIONS["1d"]) type = "1 Día";
-    if (duration === DURATIONS["1w"]) type = "1 Sem";
-    if (duration === DURATIONS["1m"]) type = "1 Mes";
-
-    authData.commonUsers[userId] = {
-      expiration: expiration,
-      name: firstName,
-      credits: (currentUser.credits || 0) + 50, // Bono
-      totalBought: currentUser.totalBought || 0, // Mantenemos historial
-      totalSpent: currentUser.totalSpent || 0, // Mantenemos historial
-      keyUsed: key, // Guardamos la Key
-      keyType: type, // Guardamos el tipo
+  if (keyData) {
+    const expiration = Date.now() + keyData.duration;
+    const currentUser = sql.getVip.get(String(userId)) || {
+      credits: 0,
+      total_bought: 0,
+      total_spent: 0,
     };
-    delete authData.activeKeys[key];
-    saveKeys();
-    saveIds();
+
+    let type = "Custom";
+    if (keyData.duration === DURATIONS["1d"]) type = "1 Día";
+    if (keyData.duration === DURATIONS["1w"]) type = "1 Sem";
+    if (keyData.duration === DURATIONS["1m"]) type = "1 Mes";
+
+    sql.insertVip.run(
+      String(userId),
+      firstName,
+      currentUser.credits + 50,
+      expiration,
+      currentUser.total_bought,
+      currentUser.total_spent,
+      key,
+      type,
+    );
+
+    sql.deleteKey.run(key);
     return new Date(expiration).toLocaleString();
   }
   return false;
 };
+
+// Placeholders para evitar errores en otros archivos
+const saveIds = () => {};
+const saveKeys = () => {};
 
 const authMiddleware = (ctx, next) => {
   if (ctx.from && isBanned(ctx.from.id)) return;
@@ -155,9 +199,10 @@ const authMiddleware = (ctx, next) => {
 
 module.exports = {
   ADMIN_ID,
-  authData,
-  saveIds,
-  saveKeys,
+  authData, // OBJETO CLAVE PARA COMPATIBILIDAD
+  getAllKeys,
+  getAllStaff,
+  getAllVips,
   getRole,
   canManage,
   authorize,
@@ -168,4 +213,5 @@ module.exports = {
   generateKey,
   redeemKey,
   authMiddleware,
+  sql,
 };

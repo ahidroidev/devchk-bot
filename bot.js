@@ -1,4 +1,7 @@
-// Importaciones y Configuración Inicial
+// =============================================================================
+//  SOCIETY . E X E - MAIN BOT FILE (RESTAURADO Y BLINDADO)
+// =============================================================================
+
 require("dotenv").config();
 const { Telegraf, Markup } = require("telegraf");
 const axios = require("axios");
@@ -16,8 +19,8 @@ const valLuhn = require("./funcionalidades/luhn.js");
 const extra = require("./funcionalidades/extra.js");
 const consultarBIN = require("./funcionalidades/bin.js");
 const CreditsManager = require("./database/credits.js");
-
-// Alias para mantener compatibilidad
+const detectarPasarela = require("./funcionalidades/pasarela.js");
+// Alias
 const Credits = CreditsManager;
 
 // --- Inicializamos el bot ---
@@ -28,7 +31,7 @@ const bot = new Telegraf(Token);
 // === INICIALIZAMOS EL LOGGER ===
 Logger.init(bot);
 
-// --- Variables globales y utilidades ---
+// --- Variables globales ---
 const userState = {};
 
 //=============================
@@ -47,7 +50,9 @@ function generarTarjeta(bin) {
   return Generador(bin);
 }
 
+// TU PERFIL VISUAL ORIGINAL
 const getUserProfile = (userId, firstName) => {
+  // Compatible con SQLite gracias a auth.js
   const staffData = Auth.authData.users[userId];
   const vipData = Auth.authData.commonUsers[userId];
   const isAdmin = userId === Auth.ADMIN_ID;
@@ -69,7 +74,9 @@ const getUserProfile = (userId, firstName) => {
   info += `${Config.decoration.line}\n\n`;
 
   if (isAdmin || staffData) {
-    info += `📦 <b>Caja Chica:</b> <code>${staffData?.limit || "∞"}</code>\n`;
+    const limitDisplay =
+      isAdmin || staffData.rango === "ADMIN" ? "∞" : staffData.limit || 500;
+    info += `📦 <b>Caja Chica:</b> <code>${limitDisplay}</code>\n`;
     info += `📊 <b>Estado:</b> <code>Operativo</code>\n`;
     info += `${Config.emojis.money} <b>Saldo Personal:</b> <code>${userCredits}</code>\n`;
   } else if (vipData) {
@@ -96,21 +103,18 @@ const getUserProfile = (userId, firstName) => {
 bot.use(Auth.authMiddleware);
 
 // ============================
-// --- Manejador de Texto ---
+// --- Manejador de Texto (RECUPERADO) ---
 // ============================
 bot.on("text", async (ctx, next) => {
   const uid = ctx.from.id;
   const state = userState[ctx.from.id];
 
-  // 1. Si es un comando, dejamos que pase al siguiente middleware
   if (ctx.message.text.startsWith("/")) return next();
-
-  // 2. Si el usuario no está esperando nada, ignoramos
   if (!state || state.step !== "WAITING_ID") return next();
 
   const input = ctx.message.text.trim();
 
-  // --- FIX: DETECTAR CANCELAR ---
+  // FIX: CANCELAR
   if (input.toLowerCase() === "cancelar") {
     delete userState[uid];
     return ctx.replyWithHTML(
@@ -118,8 +122,7 @@ bot.on("text", async (ctx, next) => {
     );
   }
 
-  // --- FIX: VALIDAR NUMEROS ---
-  // Si estamos esperando un ID de usuario (Staff/Creds) y mandan texto, error.
+  // FIX: VALIDAR NUMEROS
   if (["STAFF", "CRED"].includes(state.type) && !/^\d+$/.test(input)) {
     return ctx.replyWithHTML(
       `⚠️ <b>Error:</b> El ID debe ser numérico.\nIntenta de nuevo o escribe "cancelar".`,
@@ -159,30 +162,20 @@ bot.on("text", async (ctx, next) => {
   buttons.push([
     Markup.button.callback("🔙 VOLVER AL MENÚ", "BACK_TO_MAIN_CONFIG"),
   ]);
-
   await ctx.replyWithHTML(text, Markup.inlineKeyboard(buttons));
-
-  // OJO: Borramos el estado AQUÍ para que el bot deje de escuchar texto
-  // y solo espere el clic del botón.
   delete userState[uid];
 });
 
 // ==========================================
 // --- MÓDULO DE MODERACIÓN (BAN/KICK) ---
 // ==========================================
-
-// Helper para validar permisos matemáticos
 const checkModPerms = (ctx, targetId) => {
   const issuerId = ctx.from.id;
   const issuerRole = Auth.getRole(issuerId);
-
-  // 1. Validar Rango Mínimo (MOD)
   if (!["OWNER", "ADMIN", "MOD"].includes(issuerRole)) {
     ctx.replyWithHTML(Config.text.accessDenied);
     return false;
   }
-
-  // 2. Validar Jerarquía (Admin no banea Admin, Mod no banea Seller)
   if (!Auth.canManage(issuerId, targetId)) {
     ctx.replyWithHTML(
       `🛡️ <b>JERARQUÍA PROTEGIDA</b>\nNo tienes rango suficiente para sancionar a este usuario.`,
@@ -196,29 +189,19 @@ bot.command("ban", async (ctx) => {
   const args = ctx.message.text.split(" ");
   const targetId = args[1];
   const reason = args.slice(2).join(" ") || "Violación de reglas";
-
   if (!targetId) return ctx.reply("⚠️ Uso: /ban [ID] [RAZÓN]");
   if (!checkModPerms(ctx, targetId)) return;
 
   try {
-    // 1. Banear de DB (Global)
     Auth.banUserDB(targetId, reason);
-
-    // 2. Banear del Grupo (Si aplica)
     if (ctx.chat.type !== "private") {
       await ctx
         .banChatMember(targetId)
         .catch((e) => console.log("Error ban chat:", e.message));
     }
-
     await ctx.replyWithHTML(
-      `${Config.emojis.ban} <b>USUARIO BANEADO</b>\n` +
-        `${Config.decoration.line}\n` +
-        `👤 <b>ID:</b> <code>${targetId}</code>\n` +
-        `📝 <b>Razón:</b> ${reason}\n` +
-        `👮 <b>Staff:</b> ${ctx.from.first_name}`,
+      `${Config.emojis.ban} <b>USUARIO BANEADO</b>\nID: <code>${targetId}</code>\nRazón: ${reason}`,
     );
-
     Logger.log(
       "mod",
       ctx,
@@ -232,18 +215,13 @@ bot.command("ban", async (ctx) => {
 bot.command("unban", async (ctx) => {
   const targetId = ctx.message.text.split(" ")[1];
   if (!targetId) return ctx.reply("⚠️ Uso: /unban [ID]");
-
-  // Solo Owner/Admin
   const role = Auth.getRole(ctx.from.id);
   if (!["OWNER", "ADMIN"].includes(role))
     return ctx.reply(Config.text.accessDenied);
 
   Auth.unbanUserDB(targetId);
-
-  if (ctx.chat.type !== "private") {
+  if (ctx.chat.type !== "private")
     await ctx.unbanChatMember(targetId).catch(() => {});
-  }
-
   await ctx.replyWithHTML(
     `${Config.emojis.unban} <b>USUARIO DESBANEADO</b>\nID: <code>${targetId}</code>`,
   );
@@ -254,19 +232,16 @@ bot.command("kick", async (ctx) => {
   const targetId = ctx.message.text.split(" ")[1];
   if (!targetId) return ctx.reply("⚠️ Uso: /kick [ID]");
   if (!checkModPerms(ctx, targetId)) return;
-
   if (ctx.chat.type === "private") return ctx.reply("⚠️ Solo en grupos.");
-
   try {
     await ctx.banChatMember(targetId);
     await ctx.unbanChatMember(targetId);
-
     ctx.replyWithHTML(
       `${Config.emojis.kick} <b>USUARIO EXPULSADO</b>\nID: <code>${targetId}</code>`,
     );
     Logger.log("mod", ctx, `🥾 <b>KICK</b>\nTarget: ${targetId}`);
   } catch (e) {
-    ctx.reply("❌ Error: El bot necesita ser Admin del grupo.");
+    ctx.reply("❌ Error: Necesito ser admin.");
   }
 });
 
@@ -274,9 +249,7 @@ bot.command("mute", async (ctx) => {
   const targetId = ctx.message.text.split(" ")[1];
   if (!targetId) return ctx.reply("⚠️ Uso: /mute [ID]");
   if (!checkModPerms(ctx, targetId)) return;
-
   if (ctx.chat.type === "private") return ctx.reply("⚠️ Solo en grupos.");
-
   try {
     await ctx.restrictChatMember(targetId, {
       permissions: {
@@ -285,7 +258,6 @@ bot.command("mute", async (ctx) => {
         can_send_other_messages: false,
       },
     });
-
     ctx.replyWithHTML(
       `${Config.emojis.mute} <b>USUARIO SILENCIADO</b>\nID: <code>${targetId}</code>`,
     );
@@ -299,7 +271,6 @@ bot.command("unmute", async (ctx) => {
   const targetId = ctx.message.text.split(" ")[1];
   if (!targetId) return ctx.reply("⚠️ Uso: /unmute [ID]");
   if (!checkModPerms(ctx, targetId)) return;
-
   try {
     await ctx.restrictChatMember(targetId, {
       permissions: {
@@ -308,7 +279,6 @@ bot.command("unmute", async (ctx) => {
         can_send_other_messages: true,
       },
     });
-
     ctx.replyWithHTML(
       `${Config.emojis.unmute} <b>SILENCIO REVOCADO</b>\nID: <code>${targetId}</code>`,
     );
@@ -319,36 +289,25 @@ bot.command("unmute", async (ctx) => {
 });
 
 // ==========================================
-// --- MÓDULO ADMINISTRATIVO (JERARQUÍA) ---
+// --- MÓDULO ADMINISTRATIVO (RESTAURADO) ---
 // ==========================================
 
 bot.command("auth", async (ctx) => {
   const userId = ctx.from.id;
   const userRole = Auth.getRole(userId);
-
-  // 1. NIVEL DE PERMISO: Solo OWNER y ADMIN contratan
-  if (!["OWNER", "ADMIN"].includes(userRole)) {
-    return ctx.replyWithHTML(
-      `${Config.text.accessDenied}\nNecesitas ser <b>ADMIN</b> o <b>OWNER</b>.`,
-    );
-  }
+  if (!["OWNER", "ADMIN"].includes(userRole))
+    return ctx.replyWithHTML(Config.text.accessDenied);
 
   const args = ctx.message.text.split(" ");
   const targetId = args[1];
   const rango = args[2]?.toUpperCase();
 
-  if (!targetId || !["ADMIN", "SELLER", "MOD"].includes(rango)) {
+  if (!targetId || !["ADMIN", "SELLER", "MOD"].includes(rango))
     return ctx.replyWithHTML(
-      `${Config.emojis.warning} <b>Uso:</b> <code>/auth [ID] [RANGO]</code>\n<i>Rangos: ADMIN, SELLER, MOD</i>`,
+      `${Config.emojis.warning} <b>Uso:</b> <code>/auth [ID] [RANGO]</code>`,
     );
-  }
-
-  // 2. PROTECCIÓN: Admin no crea otro Admin
-  if (userRole === "ADMIN" && rango === "ADMIN") {
-    return ctx.reply(
-      "❌ Los Administradores solo pueden crear SELLERS y MODS.",
-    );
-  }
+  if (userRole === "ADMIN" && rango === "ADMIN")
+    return ctx.reply("❌ Admins no crean Admins.");
 
   const userChat = await ctx.telegram
     .getChat(targetId)
@@ -357,11 +316,9 @@ bot.command("auth", async (ctx) => {
     `${userChat.first_name || ""} ${userChat.last_name || ""}`.trim();
 
   Auth.authorize(targetId, rango, fullName);
-
   await ctx.replyWithHTML(
     `${Config.emojis.admin} <b>STAFF ASIGNADO</b>\n${Config.decoration.line}\n👤 <b>Nombre:</b> <code>${fullName}</code>\n🎖️ <b>Rango:</b> <code>${rango}</code>\n🆔 <b>ID:</b> <code>${targetId}</code>\n${Config.emojis.success} <i>Registrado correctamente.</i>`,
   );
-
   Logger.log(
     "auth",
     ctx,
@@ -374,20 +331,12 @@ bot.command("unauth", async (ctx) => {
   const targetId = ctx.message.text.split(" ")[1];
   if (!targetId)
     return ctx.replyWithHTML("⚠️ <b>Uso:</b> <code>/unauth [ID]</code>");
+  if (!Auth.canManage(userId, targetId))
+    return ctx.replyWithHTML(Config.text.accessDenied);
 
-  // Verificar jerarquía antes de despedir
-  if (!Auth.canManage(userId, targetId)) {
-    return ctx.replyWithHTML(
-      `🚫 <b>ACCESO DENEGADO</b>\nNo tienes rango para remover a este usuario.`,
-    );
-  }
-
-  const userInDb = Auth.authData.users[targetId];
-  const nombreCualquiera = userInDb ? userInDb.name : targetId;
   Auth.unauthorize(targetId);
-
   await ctx.replyWithHTML(
-    `🛡️ <b>RANGO REVOCADO</b>\n${Config.decoration.line}\n👤 <b>Usuario:</b> <code>${nombreCualquiera}</code>\n🆔 <b>ID:</b> <code>${targetId}</code>\n⚠️ <i>Acceso eliminado.</i>`,
+    `🛡️ <b>RANGO REVOCADO</b>\n${Config.decoration.line}\n🆔 <b>ID:</b> <code>${targetId}</code>\n⚠️ <i>Acceso eliminado.</i>`,
   );
   Logger.log("auth", ctx, `🗑️ <b>UNAUTH</b>\nTarget: ${targetId}`);
 });
@@ -395,23 +344,16 @@ bot.command("unauth", async (ctx) => {
 bot.command("addcredits", async (ctx) => {
   const userId = ctx.from.id;
   const userRole = Auth.getRole(userId);
-
-  if (!["OWNER", "ADMIN", "SELLER"].includes(userRole)) {
-    return ctx.replyWithHTML(
-      `${Config.text.accessDenied}\nLos <b>MODS</b> no gestionan economía.`,
-    );
-  }
+  if (!["OWNER", "ADMIN", "SELLER"].includes(userRole))
+    return ctx.replyWithHTML(Config.text.accessDenied);
 
   const args = ctx.message.text.split(" ");
   const targetId = args[1];
   const amount = parseInt(args[2]);
-
   if (!targetId || isNaN(amount))
     return ctx.reply("⚠️ Uso: /addcredits [ID] [CANTIDAD]");
 
-  // AQUI PASAMOS EL userId DEL OPERADOR PARA EL TRACKING
   const newBalance = Credits.add(targetId, amount, userId);
-
   await ctx.replyWithHTML(
     `${Config.emojis.money} <b>RECARGA EXITOSA</b>\n${Config.decoration.line}\n👤 <b>Cliente:</b> <code>${targetId}</code>\n💰 <b>Monto:</b> +${amount}\n📈 <b>Total:</b> ${newBalance}`,
   );
@@ -424,7 +366,6 @@ bot.command("addcredits", async (ctx) => {
 
 bot.command("genkey", async (ctx) => {
   const userRole = Auth.getRole(ctx.from.id);
-  // MOD no genera keys
   if (!["OWNER", "ADMIN", "SELLER"].includes(userRole))
     return ctx.reply(Config.text.accessDenied);
 
@@ -436,15 +377,102 @@ bot.command("genkey", async (ctx) => {
   await ctx.replyWithHTML(
     `${Config.emojis.key} <b>KEY GENERADA</b>\n<code>${newKey}</code>\n⏳ <b>Duración:</b> ${durationArg}`,
   );
-  Logger.log(
-    "auth",
-    ctx,
-    `🔑 <b>GEN KEY</b>\nStaff: ${ctx.from.id}\nKey: ${newKey}`,
+  Logger.log("auth", ctx, `🔑 <b>GEN KEY</b>\nKey: ${newKey}`);
+});
+
+// COMANDO: /config y /panel (RECUPERADOS)
+bot.command(["config", "panel"], async (ctx) => {
+  const userId = ctx.from.id;
+  if (userId !== Auth.ADMIN_ID) return;
+  delete userState[userId];
+  await ctx.replyWithHTML(
+    `⚙️ <b>CONFIGURACIÓN MAESTRA</b>\n${Config.decoration.line}\nSelecciona qué deseas gestionar:`,
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback("👮 GESTIONAR STAFF", "SET_STATE_STAFF"),
+        Markup.button.callback("💰 GESTIONAR CRÉDITOS", "SET_STATE_CRED"),
+      ],
+      [
+        Markup.button.callback("👥 GESTIONAR GRUPOS", "SET_STATE_GRP"),
+        Markup.button.callback("🔑 GESTIONAR KEYS", "SET_STATE_KEYS"),
+      ],
+      [Markup.button.callback("❌ CERRAR PANEL", "CLOSE_PANEL")],
+    ]),
   );
 });
 
+// COMANDO: /stats y /status (RECUPERADOS Y ADAPTADOS A SQLITE)
+bot.command(["stats", "status"], async (ctx) => {
+  const userId = ctx.from.id;
+  if (userId !== Auth.ADMIN_ID) return;
+
+  const uptime = process.uptime();
+  const hours = Math.floor(uptime / 3600);
+  const minutes = Math.floor((uptime % 3600) / 60);
+
+  const totalStaff = Object.keys(Auth.getAllStaff()).length;
+  const totalVips = Object.keys(Auth.getAllVips()).length;
+  const totalKeys = Object.keys(Auth.getAllKeys()).length;
+
+  const statsMsg =
+    `${Config.emojis.stats} <b>DASHBOARD DE OPERACIONES</b>\n` +
+    `${Config.decoration.line}\n\n` +
+    `🖥 <b>ESTADO DEL CORE:</b>\n` +
+    `├ <b>Status:</b> <code>ONLINE</code> 🟢\n` +
+    `├ <b>DB:</b> <code>SQLite (WAL)</code>\n` +
+    `└ <b>Uptime:</b> <code>${hours}h ${minutes}m</code>\n\n` +
+    `📊 <b>METRICAS:</b>\n` +
+    `├ <b>Staff Activo:</b> <code>${totalStaff}</code>\n` +
+    `├ <b>VIPs Totales:</b> <code>${totalVips}</code>\n` +
+    `└ <b>Keys Stock:</b> <code>${totalKeys}</code>\n\n` +
+    `${Config.decoration.line}\n` +
+    `${Config.emojis.tech} <b>NETWORK:</b> <code>CONNECTED</code>`;
+
+  await ctx.replyWithHTML(
+    statsMsg,
+    Markup.inlineKeyboard([
+      [Markup.button.callback("🔄 REFRESCAR DATOS", "UPDATE_STATS")],
+    ]),
+  );
+});
+
+// COMANDO: /bc (Broadcast)
+bot.command("bc", async (ctx) => {
+  if (ctx.from.id !== Auth.ADMIN_ID) return;
+  const args = ctx.message.text.split(" ");
+  const mode = args[1] ? args[1].toUpperCase() : null;
+  const announcement = args.slice(2).join(" ");
+
+  if (!mode || !["ALL", "VIP", "STAFF"].includes(mode) || !announcement) {
+    return ctx.replyWithHTML(
+      `📢 <b>BROADCAST</b>\n⚠️ <b>Uso:</b> <code>/bc [ALL/VIP/STAFF] [MENSAJE]</code>`,
+    );
+  }
+
+  let targets = [];
+  if (mode === "ALL" || mode === "STAFF")
+    targets.push(...Object.keys(Auth.getAllStaff()));
+  if (mode === "ALL" || mode === "VIP")
+    targets.push(...Object.keys(Auth.getAllVips()));
+
+  const finalTargets = [...new Set(targets)];
+  ctx.reply(`🚀 Iniciando broadcast a ${finalTargets.length} usuarios...`);
+
+  for (const targetId of finalTargets) {
+    try {
+      await bot.telegram.sendMessage(
+        targetId,
+        `📢 <b>ANUNCIO OFICIAL:</b>\n\n${announcement}`,
+        { parse_mode: "HTML" },
+      );
+      await new Promise((r) => setTimeout(r, 200));
+    } catch (e) {}
+  }
+  ctx.reply("✅ Broadcast terminado.");
+});
+
 // ======================
-// --- COMANDOS GENERALES ---
+// --- COMANDOS GENERALES (TU DISEÑO ORIGINAL) ---
 // ======================
 
 bot.command("start", async (ctx) => {
@@ -529,20 +557,8 @@ bot.command("me", async (ctx) => {
       ]),
     );
   } catch (err) {
-    ctx.reply(Config.text.error + " Ocurrió un error.");
+    ctx.reply(Config.text.error);
   }
-});
-
-bot.command("id", (ctx) => {
-  const user = ctx.from;
-  const idMessage =
-    `${Config.emojis.user} <b>INFORMACIÓN DE USUARIO</b>\n` +
-    `${Config.decoration.line}\n` +
-    `📝 <b>Nombre:</b> <code>${user.first_name}</code>\n` +
-    `🏷️ <b>Username:</b> <code>@${user.username || "Sin alias"}</code>\n` +
-    `🆔 <b>ID:</b> <code>${user.id}</code>\n` +
-    `${Config.decoration.line}`;
-  ctx.replyWithHTML(idMessage);
 });
 
 bot.command(["info", "help", "ayuda"], async (ctx) => {
@@ -567,46 +583,6 @@ bot.command(["info", "help", "ayuda"], async (ctx) => {
       ],
     ]),
   );
-});
-
-bot.command("redeem", async (ctx) => {
-  const key = ctx.message.text.split(" ")[1];
-  if (!key)
-    return ctx.replyWithHTML(
-      `${Config.emojis.key} <b>SISTEMA DE KEYS</b>\n${Config.decoration.line}\n⚠️ <b>Uso:</b> <code>/redeem KEY-XXXX</code>\n${Config.decoration.line}`,
-    );
-
-  const expiryDate = Auth.redeemKey(
-    ctx.from.id,
-    key,
-    ctx.from.first_name,
-    ctx.from.last_name || "",
-  );
-
-  if (expiryDate) {
-    await ctx.replyWithHTML(
-      `${Config.emojis.success} <b>¡ACCESO ACTIVADO!</b>\n${Config.decoration.line}\n${Config.emojis.user} <b>User:</b> <code>${ctx.from.first_name}</code>\n📅 <b>Expira:</b> <code>${expiryDate}</code>\n${Config.decoration.line}`,
-    );
-    Logger.log(
-      "auth",
-      ctx,
-      `🔑 <b>KEY ACTIVADA</b>\n🗝️ <b>Key:</b> <code>${key}</code>`,
-    );
-    bot.telegram
-      .sendMessage(
-        Auth.ADMIN_ID,
-        `🔔 El usuario <code>${ctx.from.id}</code> activó una Key.`,
-        { parse_mode: "HTML" },
-      )
-      .catch(() => {});
-  } else {
-    ctx.replyWithHTML(Config.text.invalidKey);
-    Logger.log(
-      "auth",
-      ctx,
-      `🚫 <b>KEY FALLIDA</b>\n🗝️ <b>Intento:</b> <code>${key}</code>`,
-    );
-  }
 });
 
 bot.command("prices", (ctx) => {
@@ -652,74 +628,135 @@ bot.command(["credits", "saldo", "money", "creditos"], async (ctx) => {
   );
 });
 
-bot.command(["cmds", "comandos"], async (ctx) => {
-  const helpMsg = `📖 <b>MENÚ DE COMANDOS</b>\n${Config.decoration.line}\n\n🆓 <b>FREE:</b> /start, /me, /id, /credits\n💎 <b>VIP:</b> /bin, /gen, /ex, /gift\n👮 <b>MOD:</b> /ban, /kick, /mute\n💰 <b>SELLER:</b> /addcredits, /genkey\n${Config.decoration.line}`;
-  await ctx.replyWithHTML(helpMsg);
-});
-
-bot.command("bc", async (ctx) => {
-  if (ctx.from.id !== Auth.ADMIN_ID) return;
-  const args = ctx.message.text.split(" ");
-  const mode = args[1] ? args[1].toUpperCase() : null;
-  const announcement = args.slice(2).join(" ");
-
-  if (!mode || !["ALL", "VIP", "STAFF"].includes(mode) || !announcement) {
+bot.command("redeem", async (ctx) => {
+  const key = ctx.message.text.split(" ")[1];
+  if (!key)
     return ctx.replyWithHTML(
-      `📢 <b>SISTEMA DE ANUNCIOS</b>\n${Config.decoration.line}\n⚠️ <b>Uso:</b> <code>/bc [MODO] [MENSAJE]</code>`,
+      `${Config.emojis.key} <b>SISTEMA DE KEYS</b>\n${Config.decoration.line}\n⚠️ <b>Uso:</b> <code>/redeem KEY-XXXX</code>\n${Config.decoration.line}`,
+    );
+
+  const expiryDate = Auth.redeemKey(ctx.from.id, key, ctx.from.first_name);
+
+  if (expiryDate) {
+    await ctx.replyWithHTML(
+      `${Config.emojis.success} <b>¡ACCESO ACTIVADO!</b>\n${Config.decoration.line}\n${Config.emojis.user} <b>User:</b> <code>${ctx.from.first_name}</code>\n📅 <b>Expira:</b> <code>${expiryDate}</code>\n${Config.decoration.line}`,
+    );
+    Logger.log(
+      "auth",
+      ctx,
+      `🔑 <b>KEY ACTIVADA</b>\n🗝️ <b>Key:</b> <code>${key}</code>`,
+    );
+  } else {
+    ctx.replyWithHTML(Config.text.invalidKey);
+    Logger.log(
+      "auth",
+      ctx,
+      `🚫 <b>KEY FALLIDA</b>\n🗝️ <b>Intento:</b> <code>${key}</code>`,
     );
   }
-
-  let targets = [];
-  if (mode === "ALL" || mode === "STAFF")
-    targets.push(...Object.keys(Auth.authData.users));
-  if (mode === "ALL" || mode === "VIP")
-    targets.push(...Object.keys(Auth.authData.commonUsers));
-  const finalTargets = [...new Set(targets)];
-
-  ctx.reply(`🚀 Iniciando broadcast para ${finalTargets.length} usuarios...`);
-  Logger.log(
-    "system",
-    ctx,
-    `📢 <b>BROADCAST</b>\n👥 <b>Targets:</b> ${finalTargets.length}\n📝 <b>Msg:</b> ${announcement}`,
-  );
 });
 
-bot.command("stats", async (ctx) => {
-  if (ctx.from.id !== Auth.ADMIN_ID) return;
-  const statsMsg =
-    `${Config.emojis.stats} <b>DASHBOARD DE OPERACIONES</b>\n` +
-    `${Config.decoration.line}\n\n` +
-    `🖥 <b>ESTADO DEL CORE:</b>\n` +
-    `├ <b>Status:</b> <code>STABLE</code> 💹\n` +
-    `└ <b>Uptime:</b> <code>Running</code>\n\n` +
-    `${Config.decoration.line}\n` +
-    `${Config.emojis.tech} <b>NETWORK:</b> <code>CONNECTED</code>`;
+// ==========================================
+// --- MÓDULO: SCANNER WEB (Acceso Global) ---
+// ==========================================
 
-  await ctx.replyWithHTML(
-    statsMsg,
-    Markup.inlineKeyboard([
-      [Markup.button.callback("🔄 REFRESCAR", "UPDATE_STATS")],
-    ]),
-  );
-});
+bot.command(["pasarela", "gate", "chkweb"], async (ctx) => {
+  const userId = ctx.from.id;
+  const username = ctx.from.username || "Anon";
+  const userRole = Auth.getRole(userId); // Obtenemos rango para el Log
+  const args = ctx.message.text.split(" ");
+  const url = args[1];
 
-bot.command("config", async (ctx) => {
-  if (ctx.from.id !== Auth.ADMIN_ID) return;
-  delete userState[ctx.from.id];
-  await ctx.replyWithHTML(
-    `⚙️ <b>CONFIGURACIÓN MAESTRA</b>\n${Config.decoration.line}\nSelecciona qué deseas gestionar:`,
-    Markup.inlineKeyboard([
-      [
-        Markup.button.callback("👮 STAFF", "SET_STATE_STAFF"),
-        Markup.button.callback("💰 CRÉDITOS", "SET_STATE_CRED"),
-      ],
-      [
-        Markup.button.callback("👥 GRUPOS", "SET_STATE_GRP"),
-        Markup.button.callback("🔑 KEYS", "SET_STATE_KEYS"),
-      ],
-      [Markup.button.callback("❌ CERRAR", "CLOSE_PANEL")],
-    ]),
+  // 1. Validación de entrada
+  if (!url)
+    return ctx.replyWithHTML(
+      `${Config.emojis.warning} <b>Uso:</b> <code>/pasarela sitioweb.com</code>`,
+    );
+
+  // 2. Lógica de Rangos y Créditos
+  // Credits.consume devuelve TRUE si es Staff (Gratis) o si es User/VIP y tiene saldo (Cobra 1)
+  // Devuelve FALSE si es User/VIP y NO tiene saldo.
+  const tieneSaldo = Credits.consume(userId);
+
+  if (!tieneSaldo) {
+    return ctx.replyWithHTML(Config.text.noBalance); // Mensaje de "Recarga saldo"
+  }
+
+  // 3. Feedback visual (Simulando hacking/escaneo)
+  console.log(
+    `🔍 [GATE] Scan solicitado: ${url} | User: ${username} | Role: ${userRole}`,
   );
+  const tempMsg = await ctx.replyWithHTML(
+    `${Config.emojis.loading} <b>Iniciando escaneo de protocolos...</b>`,
+  );
+
+  try {
+    const resultado = await detectarPasarela(url);
+
+    if (resultado.success) {
+      // Formateo de lista
+      const gatesList = resultado.gateways
+        .map((g) => `🔹 <b>${g}</b>`)
+        .join("\n");
+      const statusIcon =
+        resultado.status === 200
+          ? "🟢 Online"
+          : `🟠 Código ${resultado.status}`;
+
+      const msg =
+        `${Config.emojis.tech} <b>SCANNER DE PASARELAS</b>\n` +
+        `${Config.decoration.line}\n` +
+        `🌐 <b>Target:</b> <code>${resultado.url}</code>\n` +
+        `📡 <b>Estado:</b> ${statusIcon}\n` +
+        `📟 <b>CMS:</b> <code>${resultado.cms}</code>\n` +
+        `🛡️ <b>WAF:</b> <code>${resultado.protection}</code>\n\n` +
+        `💳 <b>GATEWAYS DETECTADOS:</b>\n` +
+        `${gatesList}\n` +
+        `${Config.decoration.line}\n` +
+        `${Config.emojis.user} <b>Usuario:</b> ${ctx.from.first_name} [${userRole}]`;
+
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        tempMsg.message_id,
+        null,
+        msg,
+        { parse_mode: "HTML", disable_web_page_preview: true },
+      );
+
+      // LOG EXITOSO
+      console.log(`✅ [GATE] Éxito: ${url} -> [${resultado.gateways}]`);
+      Logger.log(
+        "gen",
+        ctx,
+        `🔍 <b>SCAN PASARELA</b>\nURL: ${url}\nCMS: ${resultado.cms}\nGates: ${resultado.gateways.join(", ")}`,
+      );
+    } else {
+      // 4. SISTEMA DE REEMBOLSO (REFUND)
+      // Si el scanner falla (timeout o error), le devolvemos el crédito al usuario Free/VIP.
+      // Si es Staff, Credits.add no afecta negativamente, así que es seguro.
+      Credits.add(userId, 1);
+
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        tempMsg.message_id,
+        null,
+        `❌ <b>Error de Análisis:</b>\n${resultado.error}\n\n<i>💰 Crédito reembolsado.</i>`,
+        { parse_mode: "HTML" },
+      );
+      console.log(`❌ [GATE] Fallo: ${url} -> ${resultado.error}`);
+    }
+  } catch (e) {
+    // Reembolso por error crítico
+    Credits.add(userId, 1);
+    console.error(`🔥 [GATE] Error Crítico: ${e.message}`);
+    ctx.telegram.editMessageText(
+      ctx.chat.id,
+      tempMsg.message_id,
+      null,
+      "❌ Error interno del bot. Crédito devuelto.",
+      { parse_mode: "HTML" },
+    );
+  }
 });
 
 bot.command("gen", async (ctx) => {
@@ -779,7 +816,7 @@ bot.command("gen", async (ctx) => {
         Logger.log(
           "gen",
           ctx,
-          `🎲 <b>BIN:</b> <code>${binInput.slice(0, 6)}</code>\n🏦 <b>Banco:</b> ${info.bank}`,
+          `🎲 <b>BIN:</b> <code>${binInput.slice(0, 6)}</code>`,
         );
       } else {
         Credits.add(userId, 1);
@@ -794,7 +831,6 @@ bot.command("gen", async (ctx) => {
     } catch (err) {
       Credits.add(userId, 1);
       ctx.reply("⚠️ Error en el generador.");
-      Logger.log("error", ctx, `🔥 <b>Fallo en /gen</b>\n${err.message}`);
     }
   } catch (err) {
     console.error(err);
@@ -828,9 +864,6 @@ bot.command("bin", async (ctx) => {
         `├ <b>Marca:</b> <code>${info.brand}</code>\n` +
         `├ <b>Nivel:</b> <code>${info.level}</code>\n` +
         `└ <b>Tipo:</b> <code>${info.type}</code>\n\n` +
-        `${Config.emojis.phone} <b>CONTACTO:</b>\n` +
-        `├ <b>Tel:</b> <code>${info.bank_phone}</code>\n` +
-        `└ <b>Web:</b> <code>${info.bank_url}</code>\n\n` +
         `${Config.decoration.line}\n` +
         `${Config.text.footer}`;
 
@@ -840,11 +873,6 @@ bot.command("bin", async (ctx) => {
         null,
         response,
         { parse_mode: "HTML" },
-      );
-      Logger.log(
-        "bin",
-        ctx,
-        `🔍 <b>BIN:</b> <code>${info.bin}</code>\n🏦 <b>Banco:</b> ${info.bank}`,
       );
     } else {
       Credits.add(userId, 1);
@@ -859,7 +887,6 @@ bot.command("bin", async (ctx) => {
   } catch (err) {
     Credits.add(ctx.from.id, 1);
     ctx.reply(Config.text.crash);
-    Logger.log("error", ctx, `🔥 <b>Fallo en /bin</b>\n${err.message}`);
   }
 });
 
@@ -881,13 +908,11 @@ bot.command("ex", async (ctx) => {
     try {
       const resultadoExtra = extra(input);
       const info = await consultarBIN(input.slice(0, 6));
-
       const response =
         `${Config.text.extraTitle}\n` +
         `${Config.decoration.line}\n\n` +
         `${Config.emojis.input} <b>INPUT:</b> <code>${input}</code>\n` +
-        `${Config.emojis.bank} <b>BANCO:</b> <code>${info.bank || "N/A"}</code>\n` +
-        `${Config.emojis.world} <b>PAÍS:</b> <code>${info.country || "N/A"}</code>\n\n` +
+        `${Config.emojis.bank} <b>BANCO:</b> <code>${info.bank || "N/A"}</code>\n\n` +
         `${Config.emojis.info} <b>PATRONES:</b>\n` +
         `${Config.decoration.line}\n` +
         `<code>${resultadoExtra}</code>\n` +
@@ -902,11 +927,6 @@ bot.command("ex", async (ctx) => {
         response,
         { parse_mode: "HTML" },
       );
-      Logger.log(
-        "extra",
-        ctx,
-        `📊 <b>Input:</b> <code>${input}</code>\n🏦 <b>Banco:</b> ${info.bank || "N/A"}`,
-      );
     } catch (err) {
       Credits.add(userId, 1);
       ctx.reply(Config.text.crash);
@@ -916,180 +936,119 @@ bot.command("ex", async (ctx) => {
   }
 });
 
-bot.command("gift", async (ctx) => {
-  const args = ctx.message.text.split(" ");
-  const targetId = args[1];
-  const amount = parseInt(args[2]);
-  if (!targetId || isNaN(amount) || amount <= 0)
-    return ctx.replyWithHTML(
-      `${Config.emojis.warning} <b>Uso:</b> <code>/gift [ID] [CANTIDAD]</code>`,
-    );
-
-  const result = Credits.transfer(ctx.from.id, targetId, amount);
-  if (result.success) {
-    await ctx.replyWithHTML(
-      `${Config.emojis.gift} <b>TRANSFERENCIA EXITOSA</b>\n${Config.decoration.line}\n📤 <b>Enviado a:</b> <code>${targetId}</code>\n💰 <b>Monto:</b> <code>${amount} crds</code>\n📉 <b>Tu nuevo saldo:</b> <code>${result.newSenderTotal}</code>\n${Config.decoration.line}`,
-    );
-    ctx.telegram
-      .sendMessage(
-        targetId,
-        `${Config.emojis.gift} ¡Has recibido <b>${amount} créditos</b> de <b>${ctx.from.first_name}</b>!`,
-        { parse_mode: "HTML" },
-      )
-      .catch(() => {});
-
-    Logger.log(
-      "money",
-      ctx,
-      `💸 <b>TRANSFERENCIA</b>\n📤 <b>De:</b> <code>${ctx.from.id}</code>\n📥 <b>A:</b> <code>${targetId}</code>\n💰 <b>Monto:</b> ${amount}`,
-    );
-  } else {
-    ctx.replyWithHTML(`${Config.emojis.error} <b>Error:</b> ${result.msg}`);
-  }
-});
-
-// ==========================================
-// --- COMANDO MAESTRO: LISTAS DETALLADAS ---
-// ==========================================
+// LIST COMMAND (ADAPTADO A SQLITE)
 bot.command(["list", "ls"], async (ctx) => {
   const userId = ctx.from.id;
   const userRole = Auth.getRole(userId);
-
-  // 1. SEGURIDAD: Solo Staff autorizado
-  if (!["OWNER", "ADMIN", "SELLER"].includes(userRole)) {
+  if (!["OWNER", "ADMIN", "SELLER"].includes(userRole))
     return ctx.replyWithHTML(Config.text.accessDenied);
-  }
 
   const args = ctx.message.text.split(" ");
   const type = args[1] ? args[1].toLowerCase() : null;
 
-  // Menú de selección si no pone argumentos
   if (!type || !["keys", "staff", "users"].includes(type)) {
     return ctx.replyWithHTML(
-      `📋 <b>CENTRO DE REPORTES</b>\n${Config.decoration.line}\nSelecciona qué lista deseas ver:\n\n` +
-        `🔹 <code>/list keys</code> - Inventario de Keys\n` +
-        `🔹 <code>/list staff</code> - Rendimiento del Equipo\n` +
-        `🔹 <code>/list users</code> - Clientes VIP y Consumo\n` +
+      `📋 <b>CENTRO DE REPORTES</b>\n${Config.decoration.line}\nSelecciona una opción:\n\n` +
+        `🔑 <code>/list keys</code>  - Inventario\n` +
+        `👮 <code>/list staff</code> - Equipo\n` +
+        `👤 <code>/list users</code> - Clientes\n` +
         `${Config.decoration.line}`,
     );
   }
 
-  // --- REPORTE DE KEYS ---
+  // --- KEYS ---
   if (type === "keys") {
-    const keys = Auth.authData.activeKeys;
+    const keys = Auth.getAllKeys();
     const totalKeys = Object.keys(keys).length;
-
     if (totalKeys === 0) return ctx.reply("⚠️ No hay keys activas.");
 
     let msg = `${Config.emojis.key} <b>STOCK DE KEYS (${totalKeys})</b>\n${Config.decoration.line}\n`;
-    for (const [k, d] of Object.entries(keys)) {
-      const days = Math.round(d / 86400000);
-      msg += `🔑 <code>${k}</code> | ⏳ <b>${days}d</b>\n`;
+    for (const [code, duration] of Object.entries(keys)) {
+      const ms = parseInt(duration);
+      let tiempo = "Indefinido";
+      if (!isNaN(ms)) {
+        if (ms >= 86400000) {
+          tiempo = `${Math.round(ms / 86400000)} Día(s)`;
+        } else {
+          tiempo = `${Math.round(ms / 3600000)} Hora(s)`;
+        }
+      }
+      msg += `🏷️ <code>${code}</code>\n⏳ <b>Duración:</b> ${tiempo}\n${Config.decoration.line}\n`;
     }
-    // Cortar mensaje si es muy largo
     return ctx.replyWithHTML(msg.substring(0, 4000));
   }
 
-  // --- REPORTE DE STAFF (FLUJO DE CAJA) ---
+  // --- STAFF ---
   if (type === "staff") {
-    const staff = Auth.authData.users;
+    const staff = Auth.getAllStaff();
     let msg = `${Config.emojis.admin} <b>REPORTE DE STAFF</b>\n${Config.decoration.line}\n`;
     let count = 0;
-
     for (const [sid, data] of Object.entries(staff)) {
       count++;
-
       let limitDisplay;
-
-      // 1. LÓGICA DE JERARQUÍA PARA CAJA CHICA
-      if (parseInt(sid) === Auth.ADMIN_ID) {
-        limitDisplay = "∞ (Owner)";
-      } else if (data.rango === "ADMIN") {
+      if (parseInt(sid) === Auth.ADMIN_ID || data.rango === "ADMIN") {
         limitDisplay = "∞";
       } else {
-        // Para SELLERS y MODS
-        // Si data.limit existe, lo usamos. Si no (es viejo), mostramos 500 por defecto.
         const actualLimit = data.limit !== undefined ? data.limit : 500;
-
-        // Si por alguna razón tienen un límite gigante, mostramos infinito, si no, el número.
         limitDisplay = actualLimit >= 900000 ? "∞" : actualLimit;
       }
-
-      const flow = data.monthlyFlow || 0;
-
       msg += `👤 <b>${data.name}</b> [${data.rango}]\n`;
       msg += `🆔 <code>${sid}</code>\n`;
       msg += `📦 <b>Caja Chica:</b> ${limitDisplay}\n`;
-      msg += `📈 <b>Flujo Mensual:</b> ${flow} crds\n`;
+      msg += `📈 <b>Flujo:</b> ${data.monthlyFlow || 0} crds\n`;
       msg += `${Config.decoration.line}\n`;
     }
-
-    if (count === 0) return ctx.reply("⚠️ No hay staff registrado.");
-    return ctx.replyWithHTML(msg.substring(0, 4000));
+    return ctx.replyWithHTML(msg.substring(0, 4000) || "Sin Staff.");
   }
 
-  // --- REPORTE DE USUARIOS (VIPS Y CONSUMO) ---
+  // --- USERS ---
   if (type === "users") {
-    const users = Auth.authData.commonUsers;
+    const users = Auth.getAllVips();
     let msg = `${Config.emojis.user} <b>CLIENTES VIP ACTIVOS</b>\n${Config.decoration.line}\n`;
     let count = 0;
-
     for (const [uid, data] of Object.entries(users)) {
-      // Solo mostramos VIPs activos
       if (data.expiration > Date.now()) {
         count++;
         const expDate = new Date(data.expiration).toLocaleDateString();
         const keyUsed = data.keyUsed || "N/A";
-        const keyType = data.keyType || "Manual";
-        const bought = data.totalBought || 0;
-        const spent = data.totalSpent || 0;
+        const shortKey =
+          keyUsed.length > 10 ? keyUsed.substring(0, 8) + "..." : keyUsed;
 
         msg += `👤 <b>${data.name}</b>\n`;
         msg += `🆔 <code>${uid}</code>\n`;
-        msg += `🔑 <b>Key:</b> <code>${keyUsed}</code> (${keyType})\n`;
-        msg += `💰 <b>Saldo:</b> ${data.credits} crds\n`;
-        msg += `📊 <b>Historial:</b> 📥 ${bought} | 📤 ${spent}\n`;
+        msg += `🔑 <b>Key:</b> <code>${shortKey}</code> (${data.keyType || "Manual"})\n`;
+        msg += `💰 <b>Saldo:</b> ${data.credits}\n`;
         msg += `📅 <b>Vence:</b> ${expDate}\n`;
         msg += `${Config.decoration.line}\n`;
       }
     }
-
-    if (count === 0) return ctx.reply("⚠️ No hay clientes VIP activos.");
-
-    // Si la lista es enorme, enviamos por partes
-    if (msg.length > 4000) {
-      await ctx.replyWithHTML(
-        "⚠️ Reporte extenso, enviando primeros registros...",
-      );
-      return ctx.replyWithHTML(msg.substring(0, 4090));
-    }
-    return ctx.replyWithHTML(msg);
+    return ctx.replyWithHTML(msg.substring(0, 4000) || "Sin VIPs.");
   }
 });
 
-// MONITOR DE EXPIRACIÓN
+// MONITOR DE EXPIRACIÓN Y CALLBACKS
 setInterval(async () => {
   const now = Date.now();
-  for (const [userId, expiration] of Object.entries(
-    Auth.authData.commonUsers,
-  )) {
-    const remaining = expiration - now;
+  const users = Auth.getAllVips();
+  for (const [userId, data] of Object.entries(users)) {
+    const remaining = data.expiration - now;
+    // 30 min alerta
     if (remaining <= 30 * 60 * 1000 && remaining > 0) {
-      if (!Auth.authData.notifiedUsers.has(userId.toString())) {
+      if (!Auth.authData.notifiedUsers.has(userId)) {
         try {
           await bot.telegram.sendMessage(
             userId,
             "⚠️ Tu acceso expira en menos de 30 min.",
             { parse_mode: "HTML" },
           );
-          Auth.authData.notifiedUsers.add(userId.toString());
+          Auth.authData.notifiedUsers.add(userId);
         } catch (e) {}
       }
     }
+    // Expirado
     if (remaining <= 0) {
-      delete Auth.authData.commonUsers[userId];
-      Auth.authData.notifiedUsers.delete(userId.toString());
-      Auth.saveKeys();
+      Auth.sql.deleteVip.run(String(userId));
+      Auth.authData.notifiedUsers.delete(userId);
       try {
         await bot.telegram.sendMessage(userId, "🚫 Tu acceso ha expirado.", {
           parse_mode: "HTML",
@@ -1101,30 +1060,43 @@ setInterval(async () => {
 
 require("./handlers/callbacks")(bot, userState, getUserProfile, CreditsManager);
 
-const iniciarBot = async (reintentos = 0) => {
-  try {
-    console.log("🚀 Iniciando conexión...");
-    bot
-      .launch()
-      .then(() => {
-        console.log(Config.logs.shutdown);
-      })
-      .catch((e) => console.error(e));
+// ==========================================
+// --- SISTEMA DE ARRANQUE Y APAGADO ---
+// ==========================================
 
+const gracefulStop = async (signal) => {
+  console.log(`🛑 Recibida señal ${signal}. Apagando sistema...`);
+  try {
+    if (process.env.LOG_CHANNEL_ID) {
+      await bot.telegram
+        .sendMessage(
+          process.env.LOG_CHANNEL_ID,
+          `🛑 <b>SISTEMA DETENIDO</b>\n${Config.decoration.line}\n⚠️ <b>Señal:</b> ${signal}\n📉 <b>Estado:</b> Offline`,
+          { parse_mode: "HTML" },
+        )
+        .catch(() => {});
+    }
+  } catch (e) {}
+  process.exit(0);
+};
+
+process.once("SIGINT", () => gracefulStop("SIGINT"));
+process.once("SIGTERM", () => gracefulStop("SIGTERM"));
+
+const iniciarBot = async () => {
+  try {
+    await bot.launch();
     console.log(Config.logs.start);
+    console.log("🔋 [SQLITE] Base de datos conectada.");
     Logger.log(
       "system",
       null,
-      `✅ <b>CORE INICIADO</b>\n${Config.bot.version} operativa.\n🛡️ Logs y Cola activados.`,
+      `✅ <b>CORE V3 ONLINE</b>\n${Config.decoration.line}\n🔌 <b>DB:</b> SQLite (WAL)\n🤖 <b>Bot:</b> ${Config.bot.shortName}\n🛡️ <b>Sistema:</b> <code>Running</code>`,
     );
   } catch (error) {
-    const delay = Math.min(30000, (reintentos + 1) * 5000);
-    console.error(`❌ Error de conexión: ${error.message}`);
-    setTimeout(() => iniciarBot(reintentos + 1), delay);
+    console.error("Error arranque:", error);
+    setTimeout(iniciarBot, 5000);
   }
 };
-
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
 iniciarBot();

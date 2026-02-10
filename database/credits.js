@@ -1,91 +1,98 @@
+// database/credits.js
 const Auth = require("../funcionalidades/auth.js");
+const db = require("./connection.js");
+
+const sql = {
+  getCredits: db.prepare("SELECT credits FROM vips WHERE id = ?"),
+  deductCredit: db.prepare(
+    "UPDATE vips SET credits = credits - 1, total_spent = total_spent + 1 WHERE id = ?",
+  ),
+  transferDeduct: db.prepare(
+    "UPDATE vips SET credits = credits - ?, total_spent = total_spent + ? WHERE id = ?",
+  ),
+  addCredit: db.prepare(
+    "UPDATE vips SET credits = credits + ?, total_bought = total_bought + ? WHERE id = ?",
+  ),
+  updateStaffFlow: db.prepare(
+    "UPDATE staff SET monthly_flow = monthly_flow + ? WHERE id = ?",
+  ),
+  createVip: db.prepare(
+    "INSERT OR IGNORE INTO vips (id, name, credits, expiration, total_bought, total_spent) VALUES (?, ?, ?, ?, ?, ?)",
+  ),
+  wipeCredits: db.prepare("UPDATE vips SET credits = 0 WHERE id = ?"),
+  wipeAll: db.prepare("UPDATE vips SET credits = 0"),
+};
 
 const CreditsManager = {
   get: (userId) => {
     const role = Auth.getRole(userId);
     if (["OWNER", "ADMIN", "SELLER", "MOD"].includes(role)) return 999999;
-    const user = Auth.authData.commonUsers[userId];
-    return user ? user.credits || 0 : 0;
+
+    const user = sql.getCredits.get(String(userId));
+    return user ? user.credits : 0;
   },
 
-  // COBRAR (Suma al Total Gastado del usuario)
   consume: (userId) => {
     const role = Auth.getRole(userId);
     if (["OWNER", "ADMIN", "SELLER", "MOD"].includes(role)) return true;
 
-    const user = Auth.authData.commonUsers[userId];
-    if (user && (user.credits || 0) >= 1) {
-      user.credits -= 1;
-
-      // TRACKING GASTO
-      user.totalSpent = (user.totalSpent || 0) + 1;
-
-      Auth.saveIds();
+    const current = CreditsManager.get(userId);
+    if (current >= 1) {
+      sql.deductCredit.run(String(userId));
       return true;
     }
     return false;
   },
 
-  // AÑADIR (Suma al Flujo del Staff y Compra del usuario)
   add: (targetId, amount, operatorId) => {
     const qty = parseInt(amount);
     if (isNaN(qty)) return false;
+    const sid = String(targetId);
 
-    // 1. Actualizar Usuario (Comprador)
-    if (!Auth.authData.commonUsers[targetId]) {
-      Auth.authData.commonUsers[targetId] = {
-        expiration: Date.now() - 1000,
-        name: "Usuario",
-        credits: 0,
-        totalBought: 0,
-        totalSpent: 0,
-      };
-    }
-    const user = Auth.authData.commonUsers[targetId];
-    user.credits = (user.credits || 0) + qty;
-    user.totalBought = (user.totalBought || 0) + qty; // Historial compra
+    sql.createVip.run(sid, "Usuario", 0, 0, 0, 0);
+    sql.addCredit.run(qty, qty, sid);
 
-    // 2. Actualizar Staff (Vendedor/Operador)
-    if (operatorId && Auth.authData.users[operatorId]) {
-      const staff = Auth.authData.users[operatorId];
-      // Si no es el Owner (que tiene infinito), sumamos a su flujo
-      if (Auth.getRole(operatorId) !== "OWNER") {
-        staff.monthlyFlow = (staff.monthlyFlow || 0) + qty;
+    if (operatorId && Auth.getRole(operatorId) !== "OWNER") {
+      const isStaff = Auth.sql.getStaff.get(String(operatorId));
+      if (isStaff) {
+        sql.updateStaffFlow.run(qty, String(operatorId));
       }
     }
-
-    Auth.saveIds();
-    return user.credits;
+    return CreditsManager.get(sid);
   },
 
-  // TRANSFERIR
+  remove: (userId, amount) => {
+    if (amount === "ALL") {
+      sql.wipeCredits.run(String(userId));
+    }
+    return 0;
+  },
+
   transfer: (senderId, targetId, amount) => {
     const qty = parseInt(amount);
     const senderRole = Auth.getRole(senderId);
+    const sId = String(senderId);
+    const tId = String(targetId);
 
     if (senderRole !== "OWNER") {
-      const sender = Auth.authData.commonUsers[senderId];
-      if (!sender || (sender.credits || 0) < qty)
-        return { success: false, msg: "Saldo insuficiente." };
-      sender.credits -= qty;
-      sender.totalSpent = (sender.totalSpent || 0) + qty; // Cuenta como gasto
+      const balance = CreditsManager.get(sId);
+      if (balance < qty) return { success: false, msg: "Saldo insuficiente." };
+
+      sql.transferDeduct.run(qty, qty, sId);
     }
 
-    if (!Auth.authData.commonUsers[targetId]) {
-      Auth.authData.commonUsers[targetId] = {
-        expiration: 0,
-        name: "Receptor",
-        credits: 0,
-        totalBought: 0,
-        totalSpent: 0,
-      };
-    }
-    const receiver = Auth.authData.commonUsers[targetId];
-    receiver.credits = (receiver.credits || 0) + qty;
-    // No suma a totalBought porque es regalo, no compra directa al sistema (opcional)
+    sql.createVip.run(tId, "Receptor", 0, 0, 0, 0);
+    const addGift = db.prepare(
+      "UPDATE vips SET credits = credits + ? WHERE id = ?",
+    );
+    addGift.run(qty, tId);
 
-    Auth.saveIds();
-    return { success: true, newSenderTotal: CreditsManager.get(senderId) };
+    return { success: true, newSenderTotal: CreditsManager.get(sId) };
+  },
+
+  clearAll: () => {
+    const info = sql.wipeAll.run();
+    return info.changes;
   },
 };
 
