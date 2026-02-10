@@ -1414,11 +1414,24 @@ require("./handlers/callbacks")(
 
 const iniciarBot = async (reintentos = 0) => {
   try {
-    console.log("🚀 Conectando...");
-    await bot.launch();
+    console.log("🚀 Intentando conectar con Telegram...");
+
+    // Lanzamos el bot
+    bot.launch();
+
+    const readyMsg =
+      "✅ <b>SISTEMA ONLINE</b>\n━━━━━━━━━━━━━━━━━━\nEl core de <b>Society . E X E</b> ha iniciado correctamente.";
+
     console.log("✅ DevChk Bot en línea.");
+
+    // Enviamos el log al canal apenas arranca
+    if (typeof sendLog === "function") {
+      await sendLog(readyMsg);
+    }
   } catch (error) {
     const delay = Math.min(30000, (reintentos + 1) * 5000);
+    console.error(`❌ Error de conexión: ${error.message}`);
+
     setTimeout(() => iniciarBot(reintentos + 1), delay);
   }
 };
