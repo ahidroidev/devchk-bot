@@ -1,9 +1,30 @@
+// database/credits.js
 const Auth = require("../funcionalidades/auth.js");
 
 const CreditsManager = {
   get: (userId) => {
     const user = Auth.authData.commonUsers[userId];
     return user ? user.credits || 0 : 0;
+  },
+
+  // Función necesaria para que los comandos descuenten saldo
+  consume: (userId) => {
+    // 1. El Owner tiene acceso ilimitado
+    if (userId === Auth.ADMIN_ID) return true;
+
+    // 2. El STAFF (Admin/Seller) también tiene acceso ilimitado a herramientas
+    if (Auth.authData.users[userId]) return true;
+
+    // 3. Usuarios VIP/Comunes pagan 1 crédito
+    const user = Auth.authData.commonUsers[userId];
+    if (!user || (user.credits || 0) < 1) {
+      return false; // Saldo insuficiente
+    }
+
+    // 4. Ejecutar cobro y guardar
+    user.credits -= 1;
+    Auth.saveKeys();
+    return true;
   },
 
   // Punto clave: add ahora valida quién hace la operación
@@ -81,8 +102,6 @@ const CreditsManager = {
     return Auth.authData.users[adminId].limit;
   },
 
-  // --- Bloque de botones para el comando /config ---
-
   addDirect: (userId, amount) => {
     const qty = parseInt(amount);
     if (!Auth.authData.commonUsers[userId]) {
@@ -109,6 +128,35 @@ const CreditsManager = {
 
     Auth.saveKeys(); // Guardamos los cambios
     return Auth.authData.commonUsers[userId].credits;
+  },
+
+  // Transferencia de créditos entre usuarios (Comando /gift)
+  transfer: (senderId, targetId, amount) => {
+    const qty = parseInt(amount);
+    const sender = Auth.authData.commonUsers[senderId];
+
+    // El Owner puede regalar créditos infinitos
+    const isOwner = senderId === Auth.ADMIN_ID;
+
+    if (!isOwner && (!sender || (sender.credits || 0) < qty)) {
+      return { success: false, msg: "Saldo insuficiente." };
+    }
+
+    if (!Auth.authData.commonUsers[targetId]) {
+      Auth.authData.commonUsers[targetId] = {
+        credits: 0,
+        expiration: Date.now() + 86400000,
+      };
+    }
+
+    if (!isOwner) sender.credits -= qty;
+    Auth.authData.commonUsers[targetId].credits += qty;
+
+    Auth.saveKeys();
+    return {
+      success: true,
+      newSenderTotal: isOwner ? "∞" : sender.credits,
+    };
   },
 };
 

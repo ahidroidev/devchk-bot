@@ -20,8 +20,89 @@ if (!Token) throw new Error("Falta BOT_TOKEN en las variables de entorno.");
 const bot = new Telegraf(Token);
 // --- Fin ---
 
-// Variables globales y utilidades
+// --- Variables globales y utilidades ---
 const userState = {};
+// --- FIN ---
+
+//=============================
+// --- FUNCIONES AUXILIARES ---
+//=============================
+const fs = require("fs");
+const tempReply = async (ctx, text, seconds = 5) => {
+  try {
+    const msg = await ctx.replyWithHTML(text);
+    setTimeout(() => {
+      ctx.telegram.deleteMessage(ctx.chat.id, msg.message_id).catch(() => {});
+    }, seconds * 1000);
+  } catch (err) {}
+};
+
+function generarTarjeta(bin) {
+  return Generador(bin);
+}
+
+async function getBinInfo(binNum) {
+  const cleanBin = binNum.toString().replace(/\D/g, "").substring(0, 6);
+
+  if (cleanBin.length < 6) return "⚠️ <b>BIN:</b> Formato inválido.";
+
+  try {
+    const response = await axios.get(`https://lookup.binlist.net/${cleanBin}`, {
+      headers: { "Accept-Version": "3" },
+
+      timeout: 5000,
+    });
+
+    const d = response.data;
+
+    // Extraemos y formateamos con valores por defecto
+
+    const brand = (d.scheme || "Desconocido").toUpperCase();
+
+    const type = (d.type || "N/A").toUpperCase(); // DEBIT o CREDIT
+
+    const level = (d.brand || "STANDARD").toUpperCase(); // PLATINUM, BUSINESS, etc.
+
+    const bank = (d.bank?.name || "Emisor Desconocido").replace(/[&<>]/g, "");
+
+    const country = d.country?.name || "Global";
+
+    const emoji = d.country?.emoji || "🌐";
+
+    const currency = d.country?.currency || "N/A";
+
+    return (
+      `🔍 <b>CONSULTA DE BIN</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `💳 <b>BIN:</b> <code>${cleanBin}</code>\n` +
+      `🏦 <b>Banco:</b> <code>${bank}</code>\n` +
+      `🌍 <b>País:</b> ${emoji} ${country}\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `✨ <b>DETALLES TÉCNICOS:</b>\n` +
+      `├ <b>Marca:</b> <code>${brand}</code>\n` +
+      `├ <b>Nivel:</b> <code>${level}</code>\n` +
+      `├ <b>Tipo:</b> <code>${type}</code>\n` +
+      `└ <b>Moneda:</b> <code>${currency}</code>\n` +
+      `━━━━━━━━━━━━━━━━━━`
+    );
+  } catch (error) {
+    console.log(`[LOG] Fallo BIN ${cleanBin}: ${error.message}`);
+
+    return (
+      `🔍 <b>CONSULTA DE BIN</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `💳 <b>BIN:</b> <code>${cleanBin}</code>\n` +
+      `❌ <b>Estado:</b> Información no disponible\n` +
+      `━━━━━━━━━━━━━━━━━━`
+    );
+  }
+}
+//=================================
+// --- FIN FUNCIONES AUXILIARES ---
+// ================================
+// --- async func get profile ---
+// ==============================
+
 const getUserProfile = (userId, firstName) => {
   const staffData = Auth.authData.users[userId];
   const vipData = Auth.authData.commonUsers[userId];
@@ -1007,155 +1088,155 @@ bot.command(["adm", "panel", "staff"], async (ctx) => {
 // ======================
 
 bot.command("gen", async (ctx) => {
-  const userId = ctx.from.id;
-  const args = ctx.message.text.split(" ");
-  const binInput = args[1];
-
-  if (!binInput || binInput.length < 6) {
-    return ctx.replyWithHTML(
-      `🎲 <b>GENERADOR DE TARJETAS</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `⚠️ <b>Uso:</b> <code>/gen 454545</code>\n\n` +
-        `<i>Ingresa el BIN para generar 10 tarjetas con su respectiva información bancaria.</i>\n` +
-        `━━━━━━━━━━━━━━━━━━`,
-    );
-  }
-
-  const paid = Credits.consume(userId);
-  if (!paid) {
-    return ctx.replyWithHTML(
-      `❌ <b>SALDO INSUFICIENTE</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `La generación requiere <b>1 crédito</b>.\n` +
-        `💰 <b>Tu saldo:</b> <code>0</code>\n\n` +
-        `🛒 Compra créditos con @devcrackpy`,
-    );
-  }
-
-  const query = binInput.slice(0, 6);
-  const tempMsg = await ctx.replyWithHTML(
-    `⏳ <b>Consultando BIN y generando...</b>`,
-  );
-
   try {
-    const info = await consultarBIN(query);
-    const cards = [];
-    for (let i = 0; i < 10; i++) {
-      cards.push(generarTarjeta(binInput));
+    const userId = ctx.from.id;
+    const args = ctx.message.text.split(" ");
+    const binInput = args[1];
+
+    if (!binInput || binInput.length < 6) {
+      return tempReply(ctx, "🎲 <b>USO:</b> <code>/gen 454545</code>", 5);
     }
-    const cardList = cards.map((c) => `<code>${c}</code>`).join("\n");
 
-    if (info && info.success) {
-      const getFlag = (code) =>
-        code
-          .toUpperCase()
-          .replace(/./g, (char) =>
-            String.fromCodePoint(char.charCodeAt(0) + 127397),
+    const paid = Credits.consume(userId);
+    if (!paid) {
+      return ctx.replyWithHTML(
+        `❌ <b>SALDO INSUFICIENTE</b>\n━━━━━━━━━━━━━━━━━━\nNecesitas 1 crédito para generar.`,
+      );
+    }
+
+    const query = binInput.slice(0, 6);
+    const tempMsg = await ctx.replyWithHTML(
+      `⏳ <b>ENGINE:</b> Extrayendo base de datos...`,
+    );
+
+    try {
+      const info = await consultarBIN(query);
+
+      const cards = [];
+      for (let i = 0; i < 10; i++) {
+        cards.push(generarTarjeta(binInput));
+      }
+      const cardList = cards.map((c) => `<code>${c}</code>`).join("\n");
+
+      if (info && info.success) {
+        const getFlag = (code) =>
+          code
+            .toUpperCase()
+            .replace(/./g, (char) =>
+              String.fromCodePoint(char.charCodeAt(0) + 127397),
+            );
+        const flagEmoji =
+          info.flag && info.flag !== "🏳️" ? getFlag(info.flag) : "🏳️";
+
+        // ESTRUCTURA CON TODA LA INFO BANCARIA SOLICITADA
+        const response =
+          `🎲 <b>SOCIETY . E X E | GENERATOR</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n\n` +
+          `🏦 <b>BANCO:</b> <code>${info.bank}</code>\n` +
+          `🌍 <b>PAÍS:</b> <code>${info.country} ${flagEmoji}</code>\n` +
+          `💰 <b>MONEDA:</b> <code>${info.currency}</code>\n` +
+          `📞 <b>TELÉFONO:</b> <code>${info.bank_phone}</code>\n\n` +
+          `💳 <b>DETALLES DE TARJETA:</b>\n` +
+          `├ <b>Marca:</b> <code>${info.brand}</code>\n` +
+          `├ <b>Nivel:</b> <code>${info.level}</code>\n` +
+          `└ <b>Tipo:</b> <code>${info.type}</code>\n\n` +
+          `✨ <b>CARDS GENERADAS (LUHN OK):</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `${cardList}\n` +
+          `━━━━━━━━━━━━━━━━━━\n\n` +
+          `👤 <b>USER:</b> <code>${ctx.from.first_name}</code>\n` +
+          `💰 <b>COSTE:</b> <code>1 CRD</code> | <b>VER:</b> <code>V3.0</code>\n` +
+          `📡 <b>STATUS:</b> <code>VERIFIED BY @devcrackpy</code>`;
+
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          tempMsg.message_id,
+          null,
+          response,
+          { parse_mode: "HTML" },
+        );
+
+        if (typeof sendLog === "function") {
+          await sendLog(
+            `🎲 <b>GENERACIÓN</b>\nUser: <code>${userId}</code>\nBIN: <code>${query}</code>`,
           );
-      const flagEmoji = info.flag !== "🏳️" ? getFlag(info.flag) : "🏳️";
-
-      const response =
-        `🎲 <b>TARJETAS GENERADAS</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `🏦 <b>Banco:</b> <code>${info.bank}</code>\n` +
-        `🌍 <b>País:</b> <code>${info.country} ${flagEmoji}</code>\n` +
-        `🏷️ <b>Nivel:</b> <code>${info.brand} ${info.level}</code>\n\n` +
-        `💳 <b>LISTA:</b>\n${cardList}\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `👤 <b>Generado por:</b> <code>${ctx.from.first_name}</code>\n` +
-        `💰 <b>Costo:</b> <code>1 Crédito</code>\n` +
-        `✨ <b>Powered by:</b> @DevChkBot`;
-
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        tempMsg.message_id,
-        null,
-        response,
-        { parse_mode: "HTML" },
-      );
-
-      await sendLog(
-        ctx,
-        `🎲 <b>GENERACIÓN</b>\n👤 User: <code>${userId}</code>\n✅ BIN: <code>${query}</code> (Cobrado)`,
-      );
-    } else {
+        }
+      } else {
+        Credits.add(userId, 1);
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          tempMsg.message_id,
+          null,
+          `❌ <b>BIN INVÁLIDO</b>\nCrédito devuelto.`,
+          { parse_mode: "HTML" },
+        );
+      }
+    } catch (err) {
       Credits.add(userId, 1);
-      const fallback =
-        `❌ <b>BIN INVÁLIDO</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `No se encontró información para el BIN <code>${query}</code>.\n` +
-        `🔄 <b>Tu crédito ha sido devuelto.</b>\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `⚠️ <i>Asegúrate de usar un BIN real.</i>`;
-
-      await ctx.telegram.editMessageText(
-        ctx.chat.id,
-        tempMsg.message_id,
-        null,
-        fallback,
-        { parse_mode: "HTML" },
-      );
+      console.error("Error en GEN:", err);
+      ctx.reply("⚠️ Error en el generador. Reembolsado.");
     }
   } catch (err) {
-    Credits.add(userId, 1);
-    console.error("❌ Error en GEN:", err.message);
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      tempMsg.message_id,
-      null,
-      "⚠️ Error técnico al generar. Crédito devuelto.",
-      { parse_mode: "HTML" },
-    );
+    console.error("Crash en GEN:", err);
   }
 });
 
 bot.command("bin", async (ctx) => {
-  const userId = ctx.from.id;
-  const binInput = ctx.message.text.split(" ")[1];
-
-  if (!binInput || binInput.length < 6) {
-    return tempReply(ctx, "⚠️ <b>Uso:</b> <code>/bin 454545</code>", 5);
-  }
-
-  const paid = Credits.consume(userId);
-  if (!paid) {
-    return ctx.replyWithHTML(
-      `❌ <b>SALDO INSUFICIENTE</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `Esta consulta requiere <b>1 crédito</b>.\n` +
-        `💰 <b>Tu saldo:</b> <code>0</code>\n\n` +
-        `🛒 Compra créditos con @devcrackpy`,
-    );
-  }
-
-  const query = binInput.slice(0, 6);
-  const tempMsg = await ctx.replyWithHTML(
-    `⏳ <b>Consultando BIN:</b> <code>${query}</code>...`,
-  );
-
   try {
+    const userId = ctx.from.id;
+    const binInput = ctx.message.text.split(" ")[1];
+
+    if (!binInput || binInput.length < 6) {
+      return tempReply(ctx, "⚠️ <b>Uso:</b> <code>/bin 454545</code>", 5);
+    }
+
+    const paid = Credits.consume(userId);
+    if (!paid) {
+      return ctx.replyWithHTML(
+        `❌ <b>SALDO INSUFICIENTE</b>\n━━━━━━━━━━━━━━━━━━\n💰 <b>Tu saldo:</b> <code>0</code>`,
+      );
+    }
+
+    const query = binInput.slice(0, 6);
+    const tempMsg = await ctx.replyWithHTML(
+      `⏳ <b>Buscando en la DB Global...</b>`,
+    );
+
     const info = await consultarBIN(query);
+
     if (info && info.success) {
+      // Generador de banderas
       const getFlag = (code) =>
         code
           .toUpperCase()
           .replace(/./g, (char) =>
             String.fromCodePoint(char.charCodeAt(0) + 127397),
           );
-      const flagEmoji = info.flag !== "🏳️" ? getFlag(info.flag) : "🏳️";
+      const flagEmoji =
+        info.flag && info.flag !== "🏳️" ? getFlag(info.flag) : "🏳️";
 
+      // Formateo Premium de Salida
       const response =
-        `🏦 <b>INFORMACIÓN DEL BIN</b>\n` +
+        `🏦 <b>INSPECCIÓN TÉCNICA:</b> <code>${info.bin}</code>\n` +
         `━━━━━━━━━━━━━━━━━━\n\n` +
-        `💳 <b>BIN:</b> <code>${info.bin}</code>\n` +
-        `🌍 <b>País:</b> <code>${info.country} ${flagEmoji}</code>\n` +
-        `🏢 <b>Banco:</b> <code>${info.bank}</code>\n` +
-        `🏷️ <b>Marca:</b> <code>${info.brand}</code>\n` +
-        `📊 <b>Nivel:</b> <code>${info.level}</code>\n` +
-        `🎫 <b>Tipo:</b> <code>${info.type}</code>\n\n` +
+        `🌍 <b>GEOLOCALIZACIÓN</b>\n` +
+        `├ <b>País:</b> <code>${info.country} ${flagEmoji}</code>\n` +
+        `├ <b>Moneda:</b> <code>${info.currency}</code>\n` +
+        `└ <b>Coordenadas:</b> <code>${info.latitude}, ${info.longitude}</code>\n\n` +
+        `💳 <b>DATOS DE EMISOR</b>\n` +
+        `├ <b>Banco:</b> <code>${info.bank}</code>\n` +
+        `├ <b>Marca:</b> <code>${info.brand}</code>\n` +
+        `├ <b>Nivel:</b> <code>${info.level}</code>\n` +
+        `└ <b>Tipo:</b> <code>${info.type}</code>\n\n` +
+        `📞 <b>CONTACTO BANCARIO</b>\n` +
+        `├ <b>Tel:</b> <code>${info.bank_phone}</code>\n` +
+        `└ <b>Web:</b> <code>${info.bank_url}</code>\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `👤 <b>Consultado por:</b> <code>${ctx.from.first_name}</code>\n` +
         `💰 <b>Costo:</b> <code>1 Crédito</code>\n` +
+        `✨ <b>Powered by:</b> @Devcrackpy\n` +
+        `🛰️ <b>Fuente:</b> <code>${info.source || "Cluster Alpha"}</code>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
         `✨ <b>Powered by:</b> @DevChkBot`;
 
       await ctx.telegram.editMessageText(
@@ -1165,29 +1246,26 @@ bot.command("bin", async (ctx) => {
         response,
         { parse_mode: "HTML" },
       );
-      await sendLog(
-        ctx,
-        `💳 <b>BIN CHECK</b>\n👤 User: <code>${userId}</code>\n✅ Estado: Cobrado 1 Cr.`,
-      );
+
+      if (typeof sendLog === "function") {
+        await sendLog(
+          `💳 <b>BIN LOOKUP</b>\n👤 User: <code>${userId}</code>\n✅ BIN: <code>${query}</code>`,
+        );
+      }
     } else {
       Credits.add(userId, 1);
       await ctx.telegram.editMessageText(
         ctx.chat.id,
         tempMsg.message_id,
         null,
-        `❌ <b>BIN NO ENCONTRADO</b>\n━━━━━━━━━━━━━━━━━━\n\nNo se encontró información para <code>${query}</code>.\n🔄 <b>Tu crédito ha sido devuelto.</b>\n\n━━━━━━━━━━━━━━━━━━`,
+        `❌ <b>ERROR DE BASE DE DATOS</b>\n━━━━━━━━━━━━━━━━━━\nBIN <code>${query}</code> no localizado.\n🔄 <b>Crédito devuelto.</b>`,
         { parse_mode: "HTML" },
       );
     }
   } catch (err) {
-    Credits.add(userId, 1);
-    await ctx.telegram.editMessageText(
-      ctx.chat.id,
-      tempMsg.message_id,
-      null,
-      `⚠️ <b>ERROR TÉCNICO</b>\n━━━━━━━━━━━━━━━━━━\n\nHubo un problema con la API. Tu crédito ha sido devuelto automáticamente.`,
-      { parse_mode: "HTML" },
-    );
+    console.error("Error en /bin:", err);
+    Credits.add(ctx.from.id, 1);
+    ctx.reply("⚠️ Error técnico. Tu crédito fue devuelto.");
   }
 });
 
@@ -1314,8 +1392,6 @@ setInterval(async () => {
   }
 }, 60000);
 
-bot.use(Auth.authMiddleware);
-
 const sendLog = async (msg) => {
   const logChannel = process.env.LOG_CHANNEL_ID;
   if (!logChannel) return;
@@ -1351,75 +1427,3 @@ process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
 iniciarBot();
-
-// --- FUNCIONES AUXILIARES ---
-const fs = require("fs");
-const tempReply = async (ctx, text, seconds = 5) => {
-  try {
-    const msg = await ctx.replyWithHTML(text);
-    setTimeout(() => {
-      ctx.telegram.deleteMessage(ctx.chat.id, msg.message_id).catch(() => {});
-    }, seconds * 1000);
-  } catch (err) {}
-};
-
-function generarTarjeta(bin) {
-  return Generador(bin);
-}
-
-async function getBinInfo(binNum) {
-  const cleanBin = binNum.toString().replace(/\D/g, "").substring(0, 6);
-
-  if (cleanBin.length < 6) return "⚠️ <b>BIN:</b> Formato inválido.";
-
-  try {
-    const response = await axios.get(`https://lookup.binlist.net/${cleanBin}`, {
-      headers: { "Accept-Version": "3" },
-
-      timeout: 5000,
-    });
-
-    const d = response.data;
-
-    // Extraemos y formateamos con valores por defecto
-
-    const brand = (d.scheme || "Desconocido").toUpperCase();
-
-    const type = (d.type || "N/A").toUpperCase(); // DEBIT o CREDIT
-
-    const level = (d.brand || "STANDARD").toUpperCase(); // PLATINUM, BUSINESS, etc.
-
-    const bank = (d.bank?.name || "Emisor Desconocido").replace(/[&<>]/g, "");
-
-    const country = d.country?.name || "Global";
-
-    const emoji = d.country?.emoji || "🌐";
-
-    const currency = d.country?.currency || "N/A";
-
-    return (
-      `🔍 <b>CONSULTA DE BIN</b>\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `💳 <b>BIN:</b> <code>${cleanBin}</code>\n` +
-      `🏦 <b>Banco:</b> <code>${bank}</code>\n` +
-      `🌍 <b>País:</b> ${emoji} ${country}\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `✨ <b>DETALLES TÉCNICOS:</b>\n` +
-      `├ <b>Marca:</b> <code>${brand}</code>\n` +
-      `├ <b>Nivel:</b> <code>${level}</code>\n` +
-      `├ <b>Tipo:</b> <code>${type}</code>\n` +
-      `└ <b>Moneda:</b> <code>${currency}</code>\n` +
-      `━━━━━━━━━━━━━━━━━━`
-    );
-  } catch (error) {
-    console.log(`[LOG] Fallo BIN ${cleanBin}: ${error.message}`);
-
-    return (
-      `🔍 <b>CONSULTA DE BIN</b>\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `💳 <b>BIN:</b> <code>${cleanBin}</code>\n` +
-      `❌ <b>Estado:</b> Información no disponible\n` +
-      `━━━━━━━━━━━━━━━━━━`
-    );
-  }
-}
