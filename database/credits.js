@@ -1,78 +1,88 @@
-// database/credits.js
 const Auth = require("../funcionalidades/auth.js");
 
 const CreditsManager = {
   get: (userId) => {
-    // Staff siempre muestra infinito visualmente (999999)
     const role = Auth.getRole(userId);
     if (["OWNER", "ADMIN", "SELLER", "MOD"].includes(role)) return 999999;
-
     const user = Auth.authData.commonUsers[userId];
     return user ? user.credits || 0 : 0;
   },
 
-  // Función para cobrar
+  // COBRAR (Suma al Total Gastado del usuario)
   consume: (userId) => {
     const role = Auth.getRole(userId);
-
-    // 1. STAFF tiene barra libre (No gastan créditos)
     if (["OWNER", "ADMIN", "SELLER", "MOD"].includes(role)) return true;
 
-    // 2. VIPs gastan saldo
     const user = Auth.authData.commonUsers[userId];
     if (user && (user.credits || 0) >= 1) {
       user.credits -= 1;
-      Auth.saveIds(); // Guardar el nuevo saldo
+
+      // TRACKING GASTO
+      user.totalSpent = (user.totalSpent || 0) + 1;
+
+      Auth.saveIds();
       return true;
     }
-
-    // 3. FREE no tiene saldo (o si se le acabó al VIP)
     return false;
   },
 
-  // Añadir créditos
-  add: (targetId, amount) => {
+  // AÑADIR (Suma al Flujo del Staff y Compra del usuario)
+  add: (targetId, amount, operatorId) => {
     const qty = parseInt(amount);
     if (isNaN(qty)) return false;
 
+    // 1. Actualizar Usuario (Comprador)
     if (!Auth.authData.commonUsers[targetId]) {
-      // Si el usuario no existe, lo creamos como FREE pero con saldo
       Auth.authData.commonUsers[targetId] = {
         expiration: Date.now() - 1000,
         name: "Usuario",
         credits: 0,
+        totalBought: 0,
+        totalSpent: 0,
       };
     }
+    const user = Auth.authData.commonUsers[targetId];
+    user.credits = (user.credits || 0) + qty;
+    user.totalBought = (user.totalBought || 0) + qty; // Historial compra
 
-    Auth.authData.commonUsers[targetId].credits =
-      (Auth.authData.commonUsers[targetId].credits || 0) + qty;
+    // 2. Actualizar Staff (Vendedor/Operador)
+    if (operatorId && Auth.authData.users[operatorId]) {
+      const staff = Auth.authData.users[operatorId];
+      // Si no es el Owner (que tiene infinito), sumamos a su flujo
+      if (Auth.getRole(operatorId) !== "OWNER") {
+        staff.monthlyFlow = (staff.monthlyFlow || 0) + qty;
+      }
+    }
+
     Auth.saveIds();
-    return Auth.authData.commonUsers[targetId].credits;
+    return user.credits;
   },
 
-  // Transferencia
+  // TRANSFERIR
   transfer: (senderId, targetId, amount) => {
     const qty = parseInt(amount);
     const senderRole = Auth.getRole(senderId);
 
-    // El Owner se salta la validación de saldo
     if (senderRole !== "OWNER") {
       const sender = Auth.authData.commonUsers[senderId];
       if (!sender || (sender.credits || 0) < qty)
         return { success: false, msg: "Saldo insuficiente." };
       sender.credits -= qty;
+      sender.totalSpent = (sender.totalSpent || 0) + qty; // Cuenta como gasto
     }
 
-    // Añadir al destino
     if (!Auth.authData.commonUsers[targetId]) {
       Auth.authData.commonUsers[targetId] = {
         expiration: 0,
         name: "Receptor",
         credits: 0,
+        totalBought: 0,
+        totalSpent: 0,
       };
     }
-    Auth.authData.commonUsers[targetId].credits =
-      (Auth.authData.commonUsers[targetId].credits || 0) + qty;
+    const receiver = Auth.authData.commonUsers[targetId];
+    receiver.credits = (receiver.credits || 0) + qty;
+    // No suma a totalBought porque es regalo, no compra directa al sistema (opcional)
 
     Auth.saveIds();
     return { success: true, newSenderTotal: CreditsManager.get(senderId) };

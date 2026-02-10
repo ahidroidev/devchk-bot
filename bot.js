@@ -101,11 +101,31 @@ bot.use(Auth.authMiddleware);
 bot.on("text", async (ctx, next) => {
   const uid = ctx.from.id;
   const state = userState[ctx.from.id];
-  // Si es un comando (empieza con /), pasamos al siguiente middleware
+
+  // 1. Si es un comando, dejamos que pase al siguiente middleware
   if (ctx.message.text.startsWith("/")) return next();
+
+  // 2. Si el usuario no está esperando nada, ignoramos
   if (!state || state.step !== "WAITING_ID") return next();
 
   const input = ctx.message.text.trim();
+
+  // --- FIX: DETECTAR CANCELAR ---
+  if (input.toLowerCase() === "cancelar") {
+    delete userState[uid];
+    return ctx.replyWithHTML(
+      `🚫 <b>Operación cancelada.</b>\nUsa /config para volver al menú.`,
+    );
+  }
+
+  // --- FIX: VALIDAR NUMEROS ---
+  // Si estamos esperando un ID de usuario (Staff/Creds) y mandan texto, error.
+  if (["STAFF", "CRED"].includes(state.type) && !/^\d+$/.test(input)) {
+    return ctx.replyWithHTML(
+      `⚠️ <b>Error:</b> El ID debe ser numérico.\nIntenta de nuevo o escribe "cancelar".`,
+    );
+  }
+
   const type = state.type;
   let buttons = [];
   let text = "";
@@ -139,7 +159,11 @@ bot.on("text", async (ctx, next) => {
   buttons.push([
     Markup.button.callback("🔙 VOLVER AL MENÚ", "BACK_TO_MAIN_CONFIG"),
   ]);
+
   await ctx.replyWithHTML(text, Markup.inlineKeyboard(buttons));
+
+  // OJO: Borramos el estado AQUÍ para que el bot deje de escuchar texto
+  // y solo espere el clic del botón.
   delete userState[uid];
 });
 
@@ -372,7 +396,6 @@ bot.command("addcredits", async (ctx) => {
   const userId = ctx.from.id;
   const userRole = Auth.getRole(userId);
 
-  // MOD no gestiona dinero
   if (!["OWNER", "ADMIN", "SELLER"].includes(userRole)) {
     return ctx.replyWithHTML(
       `${Config.text.accessDenied}\nLos <b>MODS</b> no gestionan economía.`,
@@ -386,7 +409,8 @@ bot.command("addcredits", async (ctx) => {
   if (!targetId || isNaN(amount))
     return ctx.reply("⚠️ Uso: /addcredits [ID] [CANTIDAD]");
 
-  const newBalance = Credits.add(targetId, amount);
+  // AQUI PASAMOS EL userId DEL OPERADOR PARA EL TRACKING
+  const newBalance = Credits.add(targetId, amount, userId);
 
   await ctx.replyWithHTML(
     `${Config.emojis.money} <b>RECARGA EXITOSA</b>\n${Config.decoration.line}\n👤 <b>Cliente:</b> <code>${targetId}</code>\n💰 <b>Monto:</b> +${amount}\n📈 <b>Total:</b> ${newBalance}`,
@@ -921,6 +945,125 @@ bot.command("gift", async (ctx) => {
     );
   } else {
     ctx.replyWithHTML(`${Config.emojis.error} <b>Error:</b> ${result.msg}`);
+  }
+});
+
+// ==========================================
+// --- COMANDO MAESTRO: LISTAS DETALLADAS ---
+// ==========================================
+bot.command(["list", "ls"], async (ctx) => {
+  const userId = ctx.from.id;
+  const userRole = Auth.getRole(userId);
+
+  // 1. SEGURIDAD: Solo Staff autorizado
+  if (!["OWNER", "ADMIN", "SELLER"].includes(userRole)) {
+    return ctx.replyWithHTML(Config.text.accessDenied);
+  }
+
+  const args = ctx.message.text.split(" ");
+  const type = args[1] ? args[1].toLowerCase() : null;
+
+  // Menú de selección si no pone argumentos
+  if (!type || !["keys", "staff", "users"].includes(type)) {
+    return ctx.replyWithHTML(
+      `📋 <b>CENTRO DE REPORTES</b>\n${Config.decoration.line}\nSelecciona qué lista deseas ver:\n\n` +
+        `🔹 <code>/list keys</code> - Inventario de Keys\n` +
+        `🔹 <code>/list staff</code> - Rendimiento del Equipo\n` +
+        `🔹 <code>/list users</code> - Clientes VIP y Consumo\n` +
+        `${Config.decoration.line}`,
+    );
+  }
+
+  // --- REPORTE DE KEYS ---
+  if (type === "keys") {
+    const keys = Auth.authData.activeKeys;
+    const totalKeys = Object.keys(keys).length;
+
+    if (totalKeys === 0) return ctx.reply("⚠️ No hay keys activas.");
+
+    let msg = `${Config.emojis.key} <b>STOCK DE KEYS (${totalKeys})</b>\n${Config.decoration.line}\n`;
+    for (const [k, d] of Object.entries(keys)) {
+      const days = Math.round(d / 86400000);
+      msg += `🔑 <code>${k}</code> | ⏳ <b>${days}d</b>\n`;
+    }
+    // Cortar mensaje si es muy largo
+    return ctx.replyWithHTML(msg.substring(0, 4000));
+  }
+
+  // --- REPORTE DE STAFF (FLUJO DE CAJA) ---
+  if (type === "staff") {
+    const staff = Auth.authData.users;
+    let msg = `${Config.emojis.admin} <b>REPORTE DE STAFF</b>\n${Config.decoration.line}\n`;
+    let count = 0;
+
+    for (const [sid, data] of Object.entries(staff)) {
+      count++;
+
+      let limitDisplay;
+
+      // 1. LÓGICA DE JERARQUÍA PARA CAJA CHICA
+      if (parseInt(sid) === Auth.ADMIN_ID) {
+        limitDisplay = "∞ (Owner)";
+      } else if (data.rango === "ADMIN") {
+        limitDisplay = "∞";
+      } else {
+        // Para SELLERS y MODS
+        // Si data.limit existe, lo usamos. Si no (es viejo), mostramos 500 por defecto.
+        const actualLimit = data.limit !== undefined ? data.limit : 500;
+
+        // Si por alguna razón tienen un límite gigante, mostramos infinito, si no, el número.
+        limitDisplay = actualLimit >= 900000 ? "∞" : actualLimit;
+      }
+
+      const flow = data.monthlyFlow || 0;
+
+      msg += `👤 <b>${data.name}</b> [${data.rango}]\n`;
+      msg += `🆔 <code>${sid}</code>\n`;
+      msg += `📦 <b>Caja Chica:</b> ${limitDisplay}\n`;
+      msg += `📈 <b>Flujo Mensual:</b> ${flow} crds\n`;
+      msg += `${Config.decoration.line}\n`;
+    }
+
+    if (count === 0) return ctx.reply("⚠️ No hay staff registrado.");
+    return ctx.replyWithHTML(msg.substring(0, 4000));
+  }
+
+  // --- REPORTE DE USUARIOS (VIPS Y CONSUMO) ---
+  if (type === "users") {
+    const users = Auth.authData.commonUsers;
+    let msg = `${Config.emojis.user} <b>CLIENTES VIP ACTIVOS</b>\n${Config.decoration.line}\n`;
+    let count = 0;
+
+    for (const [uid, data] of Object.entries(users)) {
+      // Solo mostramos VIPs activos
+      if (data.expiration > Date.now()) {
+        count++;
+        const expDate = new Date(data.expiration).toLocaleDateString();
+        const keyUsed = data.keyUsed || "N/A";
+        const keyType = data.keyType || "Manual";
+        const bought = data.totalBought || 0;
+        const spent = data.totalSpent || 0;
+
+        msg += `👤 <b>${data.name}</b>\n`;
+        msg += `🆔 <code>${uid}</code>\n`;
+        msg += `🔑 <b>Key:</b> <code>${keyUsed}</code> (${keyType})\n`;
+        msg += `💰 <b>Saldo:</b> ${data.credits} crds\n`;
+        msg += `📊 <b>Historial:</b> 📥 ${bought} | 📤 ${spent}\n`;
+        msg += `📅 <b>Vence:</b> ${expDate}\n`;
+        msg += `${Config.decoration.line}\n`;
+      }
+    }
+
+    if (count === 0) return ctx.reply("⚠️ No hay clientes VIP activos.");
+
+    // Si la lista es enorme, enviamos por partes
+    if (msg.length > 4000) {
+      await ctx.replyWithHTML(
+        "⚠️ Reporte extenso, enviando primeros registros...",
+      );
+      return ctx.replyWithHTML(msg.substring(0, 4090));
+    }
+    return ctx.replyWithHTML(msg);
   }
 });
 

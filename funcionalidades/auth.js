@@ -5,7 +5,6 @@ const crypto = require("crypto");
 const path = "./authorized_ids.json";
 const keyPath = "./keys.json";
 
-// 1. DEFINICIÓN DE CONSTANTES
 const ADMIN_ID = parseInt(process.env.ADMIN_ID);
 
 const DURATIONS = {
@@ -14,23 +13,22 @@ const DURATIONS = {
   "1m": 30 * 24 * 60 * 60 * 1000,
 };
 
-// 2. ESTADO DEL BOT
 let authData = {
-  users: {}, // STAFF: { "id": { name, rango } }
-  commonUsers: {}, // VIPS:  { "id": { expiration, name, credits } }
+  users: {}, // STAFF: { id: { name, rango, limit, monthlyFlow } } <--- AÑADIDO FLOW
+  commonUsers: {}, // VIPS:  { id: { expiration, name, credits, totalBought, totalSpent, keyUsed, keyType } } <--- AÑADIDO STATS
   activeKeys: {},
-  bannedUsers: {}, // <--- NUEVO: Lista negra { "id": "Razón" }
+  bannedUsers: {},
   notifiedUsers: new Set(),
   cooldowns: new Map(),
 };
 
-// 3. PERSISTENCIA
+// --- PERSISTENCIA ---
 const saveIds = () => {
   try {
     const dataToSave = {
       users: authData.users,
       commonUsers: authData.commonUsers,
-      bannedUsers: authData.bannedUsers, // Guardar baneados
+      bannedUsers: authData.bannedUsers,
     };
     fs.writeFileSync(path, JSON.stringify(dataToSave, null, 2));
   } catch (e) {
@@ -46,13 +44,13 @@ const saveKeys = () => {
   }
 };
 
-// Cargar datos al inicio
+// Cargar DB
 try {
   if (fs.existsSync(path)) {
     const data = JSON.parse(fs.readFileSync(path));
     authData.users = data.users || {};
     authData.commonUsers = data.commonUsers || {};
-    authData.bannedUsers = data.bannedUsers || {}; // Cargar baneados
+    authData.bannedUsers = data.bannedUsers || {};
   }
   if (fs.existsSync(keyPath)) {
     authData.activeKeys = JSON.parse(fs.readFileSync(keyPath));
@@ -61,47 +59,33 @@ try {
   console.error("Error cargando DB:", e);
 }
 
-// --- LÓGICA DE JERARQUÍA (IMPORTANTE) ---
-
+// --- ROLES ---
 const getRole = (userId) => {
   const uid = String(userId);
-  const adminIdStr = String(ADMIN_ID);
-
-  if (uid === adminIdStr) return "OWNER";
-
-  if (authData.users[uid]) {
-    return authData.users[uid].rango; // Retorna: ADMIN, SELLER o MOD
-  }
-
-  const vip = authData.commonUsers[uid];
-  if (vip && vip.expiration > Date.now()) {
-    return "VIP";
-  }
-
+  if (uid === String(ADMIN_ID)) return "OWNER";
+  if (authData.users[uid]) return authData.users[uid].rango;
+  if (authData.commonUsers[uid]?.expiration > Date.now()) return "VIP";
   return "FREE";
 };
 
-// Verifica si un rol tiene permiso sobre otro (Matemática de poder)
 const canManage = (issuerId, targetId) => {
   const hierarchy = { OWNER: 5, ADMIN: 4, SELLER: 3, MOD: 2, VIP: 1, FREE: 0 };
-
   const issuerRole = getRole(issuerId);
   const targetRole = getRole(targetId);
-
-  // Regla de Oro: Nadie toca al Owner
   if (targetRole === "OWNER") return false;
-
-  // Para accionar, tu rango debe ser ESTRICTAMENTE mayor que el del objetivo
-  return (hierarchy[issuerRole] || 0) > (hierarchy[targetRole] || 0);
+  return hierarchy[issuerRole] > hierarchy[targetRole];
 };
 
-// --- GESTIÓN DE STAFF Y BANEOS ---
-
+// --- ACCIONES DB ---
 const authorize = (id, rango, name) => {
-  authData.users[id] = { rango, name };
-  // Si era VIP o Baneado, limpiamos eso
+  // Inicializamos al Staff con flujo 0 y límite por defecto (ej: 500)
+  authData.users[id] = {
+    rango,
+    name,
+    limit: rango === "ADMIN" ? 999999 : 500, // Límite de caja chica inicial
+    monthlyFlow: 0,
+  };
   if (authData.commonUsers[id]) delete authData.commonUsers[id];
-  if (authData.bannedUsers[id]) delete authData.bannedUsers[id];
   saveIds();
 };
 
@@ -112,7 +96,7 @@ const unauthorize = (id) => {
 };
 
 const banUserDB = (id, reason) => {
-  unauthorize(id); // Quitamos Staff/VIP
+  unauthorize(id);
   authData.bannedUsers[id] = reason;
   saveIds();
 };
@@ -122,12 +106,9 @@ const unbanUserDB = (id) => {
   saveIds();
 };
 
-const isBanned = (id) => {
-  return !!authData.bannedUsers[id];
-};
+const isBanned = (id) => !!authData.bannedUsers[id];
 
-// --- GESTIÓN DE KEYS ---
-
+// --- KEYS ---
 const generateKey = (type) => {
   const duration = DURATIONS[type] || DURATIONS["1d"];
   const randomHex = crypto.randomBytes(4).toString("hex").toUpperCase();
@@ -137,16 +118,27 @@ const generateKey = (type) => {
   return key;
 };
 
+// --- REDEEM CON TRACKING (NUEVO) ---
 const redeemKey = (userId, key, firstName = "Usuario") => {
   const duration = authData.activeKeys[key];
   if (duration) {
     const expiration = Date.now() + duration;
-    const currentCredits = authData.commonUsers[userId]?.credits || 0;
+    const currentUser = authData.commonUsers[userId] || {};
+
+    // Determinamos tipo de key basado en duración
+    let type = "Custom";
+    if (duration === DURATIONS["1d"]) type = "1 Día";
+    if (duration === DURATIONS["1w"]) type = "1 Sem";
+    if (duration === DURATIONS["1m"]) type = "1 Mes";
 
     authData.commonUsers[userId] = {
       expiration: expiration,
       name: firstName,
-      credits: currentCredits + 50,
+      credits: (currentUser.credits || 0) + 50, // Bono
+      totalBought: currentUser.totalBought || 0, // Mantenemos historial
+      totalSpent: currentUser.totalSpent || 0, // Mantenemos historial
+      keyUsed: key, // Guardamos la Key
+      keyType: type, // Guardamos el tipo
     };
     delete authData.activeKeys[key];
     saveKeys();
@@ -156,12 +148,8 @@ const redeemKey = (userId, key, firstName = "Usuario") => {
   return false;
 };
 
-// --- MIDDLEWARE DE SEGURIDAD ---
 const authMiddleware = (ctx, next) => {
-  if (ctx.from && isBanned(ctx.from.id)) {
-    // Usuario baneado en DB no puede usar el bot
-    return;
-  }
+  if (ctx.from && isBanned(ctx.from.id)) return;
   return next();
 };
 
@@ -174,9 +162,9 @@ module.exports = {
   canManage,
   authorize,
   unauthorize,
-  banUserDB, // Nuevo
-  unbanUserDB, // Nuevo
-  isBanned, // Nuevo
+  banUserDB,
+  unbanUserDB,
+  isBanned,
   generateKey,
   redeemKey,
   authMiddleware,
