@@ -2,38 +2,39 @@
 const Auth = require("../funcionalidades/auth");
 const { Markup } = require("telegraf");
 const CreditsManager = require("../database/credits.js");
+const Config = require("../config.js");
+const Logger = require("../funcionalidades/logger.js");
 
 module.exports = (bot, userState, getUserProfile) => {
   bot.on("callback_query", async (ctx) => {
     const data = ctx.callbackQuery.data;
     const uid = ctx.from.id;
+    const msgId = ctx.callbackQuery.message.message_id;
 
-    console.log(`[DEBUG] Botón presionado: ${data} | User: ${uid}`);
+    // console.log(`[DEBUG] Button: ${data} | User: ${uid}`);
 
     try {
       await ctx.answerCbQuery().catch(() => {});
-    } catch (e) {
-      console.log("Error al responder callback");
-    }
+    } catch (e) {}
 
     // ====================================
-    // --- CALLBACK QUERIES & SOLICITUDES ---
+    // --- 1. SISTEMA DE AYUDA (INFO) ---
     // ====================================
-
-    // --- 1. SECCIÓN DE AYUDA (HELP SYSTEM) ---
 
     if (data === "HELP_GEN") {
       const text =
-        `💳 <b>GUÍA: GENERADOR</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `El comando <code>/gen</code> crea tarjetas basadas en un BIN.\n\n` +
-        `📝 <b>Uso:</b> <code>/gen 454545 10</code>\n` +
-        `💡 <i>Máximo 15 tarjetas por solicitud.</i>`;
+        `${Config.emojis.card} <b>GUÍA: GENERADOR</b>\n` +
+        `${Config.decoration.line}\n\n` +
+        `El comando <code>/gen</code> crea tarjetas basadas en un BIN, calculando algoritmo de Luhn y fecha válida.\n\n` +
+        `📝 <b>Uso:</b> <code>/gen 454545</code>\n` +
+        `💡 <i>Genera 10 tarjetas por solicitud.</i>\n` +
+        `💰 <b>Costo:</b> 1 Crédito.`;
+
       return ctx
         .editMessageText(text, {
           parse_mode: "HTML",
           ...Markup.inlineKeyboard([
-            [Markup.button.callback("⬅️ VOLVER", "BACK_HELP")],
+            [Markup.button.callback("🔙 VOLVER", "BACK_HELP")],
           ]),
         })
         .catch(() => {});
@@ -41,17 +42,17 @@ module.exports = (bot, userState, getUserProfile) => {
 
     if (data === "HELP_KEYS") {
       const text =
-        `🔑 <b>SISTEMA DE KEYS</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `1️⃣ Compra tu key con el Admin.\n` +
-        `2️⃣ Usa el comando: <code>/redeem KEY-XXXX</code>\n` +
-        `3️⃣ Acceso instantáneo al bot.\n\n` +
-        `⚠️ <i>Las keys son de un solo uso.</i>`;
+        `${Config.emojis.key} <b>GUÍA: SISTEMA DE KEYS</b>\n` +
+        `${Config.decoration.line}\n\n` +
+        `Canjea tu acceso VIP o saldo usando una Key única entregada por el admin.\n\n` +
+        `📝 <b>Uso:</b> <code>/redeem KEY-XXXX-XXXX</code>\n` +
+        `💎 <b>Beneficios:</b> Acceso ilimitado por el tiempo de la key.`;
+
       return ctx
         .editMessageText(text, {
           parse_mode: "HTML",
           ...Markup.inlineKeyboard([
-            [Markup.button.callback("⬅️ VOLVER", "BACK_HELP")],
+            [Markup.button.callback("🔙 VOLVER", "BACK_HELP")],
           ]),
         })
         .catch(() => {});
@@ -59,30 +60,62 @@ module.exports = (bot, userState, getUserProfile) => {
 
     if (data === "HELP_EXTRA") {
       const text =
-        `📊 <b>GUÍA: EXTRAPOLACIÓN</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `Encuentra patrones de tarjetas válidas.\n\n` +
-        `📝 <b>Uso:</b> <code>/ex 489504xxxxxxxxxx</code>\n` +
-        `💡 <i>Usa al menos 12 dígitos para mayor precisión.</i>`;
+        `${Config.emojis.stats} <b>GUÍA: EXTRAPOLACIÓN</b>\n` +
+        `${Config.decoration.line}\n\n` +
+        `El comando <code>/ex</code> busca patrones matemáticos similares a una tarjeta o BIN.\n\n` +
+        `📝 <b>Uso:</b> <code>/ex 454545xxxxxxxxxx</code>\n` +
+        `📡 <b>Algoritmo:</b> Proximidad + Simetría.`;
+
       return ctx
         .editMessageText(text, {
           parse_mode: "HTML",
           ...Markup.inlineKeyboard([
-            [Markup.button.callback("⬅️ VOLVER", "BACK_HELP")],
+            [Markup.button.callback("🔙 VOLVER", "BACK_HELP")],
           ]),
         })
         .catch(() => {});
     }
 
+    if (data === "HELP_STAFF") {
+      const text =
+        `${Config.emojis.admin} <b>PANEL DE COMANDOS STAFF</b>\n` +
+        `${Config.decoration.line}\n\n` +
+        `👮 <b>ADMIN / OWNER:</b>\n` +
+        `├ <code>/auth [ID] [RANGO]</code> - Crear Staff\n` +
+        `├ <code>/unauth [ID]</code> - Despedir Staff\n` +
+        `└ <code>/config</code> - Panel Global\n\n` +
+        `💰 <b>SELLER / ADMIN:</b>\n` +
+        `├ <code>/addcredits [ID] [CANT]</code>\n` +
+        `└ <code>/genkey [1d/1w/1m]</code>\n\n` +
+        `🛡️ <b>MOD / ADMIN:</b>\n` +
+        `├ <code>/ban [ID]</code> - Banear Usuario\n` +
+        `├ <code>/unban [ID]</code> - Desbanear\n` +
+        `├ <code>/kick [ID]</code> - Expulsar\n` +
+        `└ <code>/mute [ID]</code> - Silenciar`;
+
+      return ctx
+        .editMessageText(text, {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("🔙 VOLVER", "BACK_TO_START")],
+          ]),
+        })
+        .catch(() => {});
+    }
+
+    // ====================================
+    // --- 2. NAVEGACIÓN DE MENÚS ---
+    // ====================================
+
     if (data === "BACK_HELP") {
       const helpMenu =
-        `📖 <b>CENTRO DE AYUDA</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `Selecciona una categoría para ver los detalles:\n\n` +
-        `🚀 <b>HERRAMIENTAS:</b>\n` +
-        `├ <code>/gen</code> - Generador\n` +
-        `├ <code>/bin</code> - Info de banco\n` +
-        `└ <code>/ex</code> - Extrapolación`;
+        `${Config.text.helpMenu}\n` +
+        `${Config.decoration.line}\n\n` +
+        `🛠 <b>BÁSICOS:</b>\n├ <code>/start</code>\n├ <code>/me</code>\n└ <code>/id</code>\n\n` +
+        `🚀 <b>VIP:</b>\n├ <code>/gen</code>\n├ <code>/bin</code>\n└ <code>/ex</code>\n\n` +
+        `${Config.decoration.line}\n` +
+        `${Config.text.footer}`;
+
       return ctx
         .editMessageText(helpMenu, {
           parse_mode: "HTML",
@@ -93,566 +126,281 @@ module.exports = (bot, userState, getUserProfile) => {
             ],
             [
               Markup.button.callback("📊 EXTRAPOLAR", "HELP_EXTRA"),
-              Markup.button.callback("⬅️ VOLVER", "BACK_TO_START"),
+              Markup.button.url("🛒 COMPRAR", Config.owner.supportLink),
             ],
-          ]),
-        })
-        .catch(() => {});
-    }
-
-    // ============================
-    // --- Store Callbacks Aquí ---
-    // ============================
-
-    if (data === "SHOW_PRICES") {
-      const prices =
-        "💎 <b>PLANES DISPONIBLES</b>\n" +
-        "━━━━━━━━━━━━━━━━━━\n" +
-        "🔵 <b>Diario:</b> <code>$2.00 USD</code>\n" +
-        "🟢 <b>Semanal:</b> <code>$7.00 USD</code>\n" +
-        "🔴 <b>Mensual:</b> <code>$20.00 USD</code>\n\n" +
-        "💰 <b>Métodos:</b> Binance, TrustWallet, Bancos de CO, MEX, VE.";
-
-      return ctx
-        .editMessageText(prices, {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [Markup.button.url("🛒 Comprar key", "https://t.me/devcrackpy")],
-            [Markup.button.callback("🔙 Volver", "BACK_TO_START")],
-          ]),
-        })
-        .catch((err) => console.log("Error precios:", err.message));
-    }
-
-    if (data === "REDEEM_HELP") {
-      const text =
-        "📝 <b>¿Cómo activar tu Key?</b>\n\n" +
-        "Usa el comando seguido de tu código:\n" +
-        "👉 <code>/redeem DEV-XXXX-XXXX</code>";
-
-      return ctx
-        .editMessageText(text, {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback("🔙 Volver", "BACK_TO_DENIED")],
-          ]),
-        })
-        .catch((err) => console.log("Error redeem help:", err.message));
-    }
-
-    if (data === "BACK_TO_DENIED") {
-      return ctx
-        .editMessageText(
-          `🚫 <b>ACCESO RESTRINGIDO</b>\n━━━━━━━━━━━━━━━━━━\n` +
-            `Necesitas una suscripción activa.\n\n` +
-            `🆔 ID: <code>${ctx.from.id}</code>`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback("💳 Ver Planes", "SHOW_PRICES"),
-                Markup.button.callback("🔑 Canjear", "REDEEM_HELP"),
-              ],
-              [Markup.button.callback("⬅️ VOLVER", "BACK_TO_START")],
-            ]),
-          },
-        )
-        .catch((err) => console.log("Error back denied:", err.message));
-    }
-
-    // --- LÓGICA DE RESET DE ECONOMÍA ---
-    if (data === "CONFIRM_RESET_ECONOMY") {
-      if (ctx.from.id !== Auth.ADMIN_ID) {
-        return ctx.answerCbQuery("🚫 No tienes permiso para esto.", {
-          show_alert: true,
-        });
-      }
-
-      const totalUsers = CreditsManager.clearAll();
-
-      await ctx.editMessageText(
-        `☢️ <b>ECONOMÍA RESETEADA</b>\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `Se han limpiado los créditos de <b>${totalUsers}</b> usuarios.\n` +
-          `📊 <b>Estado:</b> <code>CERO ABSOLUTO</code>\n` +
-          `━━━━━━━━━━━━━━━━━━`,
-        {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback(
-                "🔙 VOLVER AL PANEL",
-                "BACK_TO_MAIN_CONFIG",
-              ),
-            ],
-          ]),
-        },
-      );
-
-      if (typeof sendLog !== "undefined") {
-        await sendLog(
-          ctx,
-          `RESETEO TOTAL DE ECONOMÍA (Usuarios afectados: ${totalUsers})`,
-        );
-      }
-    }
-
-    if (data === "CANCEL_RESET") {
-      await ctx.editMessageText(
-        "✅ <b>Acción cancelada.</b> La economía sigue intacta.",
-        {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback(
-                "🔙 VOLVER AL PANEL",
-                "BACK_TO_MAIN_CONFIG",
-              ),
-            ],
-          ]),
-        },
-      );
-    }
-
-    // --- SECCIÓN DE CONFIGURACIÓN (MANEJO DE ESTADOS) ---
-    if (data.startsWith("SET_STATE_")) {
-      const state = data.replace("SET_STATE_", "");
-
-      userState[uid] = { step: "WAITING_ID", type: state };
-      console.log(`[DEBUG] Estado guardado para ${uid}:`, userState[uid]);
-
-      const prompts = {
-        STAFF: "Escribe el <b>ID del Usuario</b> para gestionar su Rango:",
-        CRED: "Escribe el <b>ID del Usuario</b> para gestionar sus Créditos:",
-        GRP: "Escribe el <b>ID del Grupo</b> (ej: -100...) para Autorizar/Revocar:",
-        KEYS: "Escribe la <b>KEY</b> (ej: DEV-...) para Confirmar/Eliminar:",
-      };
-
-      return ctx
-        .editMessageText(
-          `📥 <b>ESPERANDO DATOS</b>\n━━━━━━━━━━━━━━━━━━\n${prompts[state]}`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback(
-                  "❌ VOLVER AL PANEL",
-                  "BACK_TO_MAIN_CONFIG",
-                ),
-              ],
-            ]),
-          },
-        )
-        .catch((e) => console.log("Error al editar:", e.message));
-    }
-
-    if (data === "BACK_TO_MAIN_CONFIG") {
-      delete userState[uid];
-      const menu = `⚙️ <b>CONFIGURACIÓN MAESTRA</b>\n━━━━━━━━━━━━━━━━━━\nSelecciona categoría:`;
-      return ctx
-        .editMessageText(menu, {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback("👮 STAFF", "SET_STATE_STAFF"),
-              Markup.button.callback("💰 CRÉDITOS", "SET_STATE_CRED"),
-            ],
-            [
-              Markup.button.callback("👥 GRUPOS", "SET_STATE_GRP"),
-              Markup.button.callback("🔑 KEYS", "SET_STATE_KEYS"),
-            ],
-            [Markup.button.callback("🔙 VOLVER AL INICIO", "BACK_TO_START")],
-          ]),
-        })
-        .catch(() => {});
-    }
-
-    if (data.startsWith("REV_ALL_")) {
-      const tid = data.replace("REV_ALL_", "");
-      Auth.unauthorize(tid);
-      CreditsManager.remove(tid, "ALL");
-
-      await ctx
-        .editMessageText(
-          `🛡️ <b>ACCESOS REVOCADOS</b>\n` +
-            `━━━━━━━━━━━━━━━━━━\n` +
-            `🆔 ID: <code>${tid}</code>\n` +
-            `⚠️ El usuario ha sido removido del Staff y su saldo quedó en 0.`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback(
-                  "🔙 VOLVER AL PANEL",
-                  "BACK_TO_MAIN_CONFIG",
-                ),
-              ],
-            ]),
-          },
-        )
-        .catch(() => {});
-    }
-
-    if (data.startsWith("CONF_STAFF_")) {
-      const tid = data.replace("CONF_STAFF_", "");
-      const buttons = [
-        [
-          Markup.button.callback("ADMIN", `SET_RANG_${tid}_ADMIN`),
-          Markup.button.callback("SELLER", `SET_RANG_${tid}_SELLER`),
-        ],
-        [Markup.button.callback("🔙 VOLVER AL PANEL", "BACK_TO_MAIN_CONFIG")],
-      ];
-      await ctx
-        .editMessageText(
-          `🎖️ <b>ASIGNAR RANGO STAFF</b>\n🆔 ID: <code>${tid}</code>\n\nSelecciona el nivel:`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard(buttons),
-          },
-        )
-        .catch(() => {});
-    }
-
-    if (data.startsWith("SET_RANG_")) {
-      const [_, __, tid, rango] = data.split("_");
-      try {
-        const userChat = await ctx.telegram.getChat(tid);
-        const fullName =
-          `${userChat.first_name || "Usuario"} ${userChat.last_name || ""}`.trim();
-        const username = userChat.username
-          ? `@${userChat.username}`
-          : "Sin Alias";
-
-        Auth.authorize(tid, rango, fullName);
-
-        await ctx.editMessageText(
-          `👮 <b>STAFF ACTUALIZADO</b>\n` +
-            `━━━━━━━━━━━━━━━━━━\n` +
-            `👤 <b>Nombre:</b> <code>${fullName}</code>\n` +
-            `🏷️ <b>User:</b> <code>${username}</code>\n` +
-            `🆔 <b>ID:</b> <code>${tid}</code>\n` +
-            `🎖️ <b>Rango:</b> <code>${rango}</code>\n\n` +
-            `✅ <i>Permisos aplicados y nombre registrado.</i>`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback(
-                  "🔙 VOLVER AL PANEL",
-                  "BACK_TO_MAIN_CONFIG",
-                ),
-              ],
-            ]),
-          },
-        );
-      } catch (error) {
-        Auth.authorize(tid, rango, "Desconocido");
-        await ctx.editMessageText(
-          `⚠️ <b>STAFF ACTUALIZADO (Limitado)</b>\n` +
-            `━━━━━━━━━━━━━━━━━━\n` +
-            `ID: <code>${tid}</code>\n` +
-            `Rango: <b>${rango}</b>\n\n` +
-            `<i>No pude obtener el nombre real, pero el rango fue asignado.</i>`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback(
-                  "🔙 VOLVER AL PANEL",
-                  "BACK_TO_MAIN_CONFIG",
-                ),
-              ],
-            ]),
-          },
-        );
-      }
-    }
-
-    if (data.startsWith("CONF_CRED_")) {
-      const tid = data.replace("CONF_CRED_", "");
-      const buttons = [
-        [
-          Markup.button.callback("+10", `ADD_DIR_${tid}_10`),
-          Markup.button.callback("+50", `ADD_DIR_${tid}_50`),
-          Markup.button.callback("+100", `ADD_DIR_${tid}_100`),
-        ],
-        [Markup.button.callback("🔙 VOLVER AL PANEL", "BACK_TO_MAIN_CONFIG")],
-      ];
-      await ctx
-        .editMessageText(
-          `💰 <b>AÑADIR CRÉDITOS</b>\n🆔 ID: <code>${tid}</code>\n\nSelecciona el monto a sumar:`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard(buttons),
-          },
-        )
-        .catch(() => {});
-    }
-
-    if (data.startsWith("ADD_DIR_")) {
-      const [_, __, tid, cant] = data.split("_");
-      CreditsManager.addDirect(tid, cant);
-      await ctx.editMessageText(
-        `✅ <b>RECARGA EXITOSA</b>\n🆔 ID: <code>${tid}</code>\n📈 Sumado: <b>+${cant} crds</b>\n💰 El saldo ha sido actualizado.`,
-        {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback(
-                "🔙 VOLVER AL PANEL",
-                "BACK_TO_MAIN_CONFIG",
-              ),
-            ],
-          ]),
-        },
-      );
-    }
-
-    if (data.startsWith("CONF_GRP_")) {
-      const gid = data.replace("CONF_GRP_", "");
-      try {
-        const chatInfo = await ctx.telegram.getChat(gid);
-        const groupTitle = chatInfo.title || "Grupo Privado";
-        Auth.authData.groups = Auth.authData.groups || {};
-        Auth.authData.groups[gid] = groupTitle;
-        Auth.saveIds();
-
-        await ctx.editMessageText(
-          `✅ <b>GRUPO AUTORIZADO</b>\n` +
-            `━━━━━━━━━━━━━━━━━━\n` +
-            `👥 <b>Nombre:</b> <code>${groupTitle}</code>\n` +
-            `🆔 <b>GID:</b> <code>${gid}</code>\n\n` +
-            `<i>Ahora aparecerá correctamente en tu /list.</i>`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback(
-                  "🔙 VOLVER AL PANEL",
-                  "BACK_TO_MAIN_CONFIG",
-                ),
-              ],
-            ]),
-          },
-        );
-      } catch (error) {
-        Auth.authData.groups[gid] = "Grupo Desconocido";
-        Auth.saveIds();
-        await ctx.answerCbQuery(
-          "⚠️ No pude obtener el nombre, pero lo autoricé.",
-          { show_alert: true },
-        );
-      }
-    }
-
-    if (data.startsWith("REV_GRP_")) {
-      const gid = data.replace("REV_GRP_", "");
-      if (Auth.authData.groups) {
-        delete Auth.authData.groups[gid];
-        Auth.saveIds();
-      }
-      await ctx
-        .editMessageText(
-          `🚫 <b>GRUPO REVOCADO</b>\n` +
-            `━━━━━━━━━━━━━━━━━━\n` +
-            `🆔 GID: <code>${gid}</code>\n` +
-            `⚠️ El acceso ha sido retirado para este grupo.`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback(
-                  "🔙 VOLVER AL PANEL",
-                  "BACK_TO_MAIN_CONFIG",
-                ),
-              ],
-            ]),
-          },
-        )
-        .catch(() => {});
-    }
-
-    if (data.startsWith("CONF_KEY_")) {
-      const key = data.replace("CONF_KEY_", "");
-      await ctx.editMessageText(
-        `✅ <b>KEY CONFIRMADA</b>\n<code>${key}</code>\nEstado: Activa.`,
-        {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback(
-                "🔙 VOLVER AL PANEL",
-                "BACK_TO_MAIN_CONFIG",
-              ),
-            ],
-          ]),
-        },
-      );
-    }
-
-    if (data.startsWith("REV_KEY_")) {
-      const key = data.replace("REV_KEY_", "");
-      if (Auth.authData.activeKeys) {
-        delete Auth.authData.activeKeys[key];
-        Auth.saveKeys();
-      }
-      await ctx.editMessageText(
-        `🗑️ <b>KEY ELIMINADA</b>\n<code>${key}</code>\nRemovida del sistema.`,
-        {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [
-              Markup.button.callback(
-                "🔙 VOLVER AL PANEL",
-                "BACK_TO_MAIN_CONFIG",
-              ),
-            ],
-          ]),
-        },
-      );
-    }
-
-    if (data === "HELP_STAFF") {
-      const text =
-        `👮 <b>COMANDOS PARA EL STAFF</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `🛠️ <b>GESTIÓN:</b>\n` +
-        `├ <code>/auth</code> - Autorizar Staff\n` +
-        `├ <code>/unauth</code> - Revocar Staff\n` +
-        `├ <code>/config</code> - Panel Maestro\n` +
-        `└ <code>/list</code> - Ver base de datos\n\n` +
-        `💰 <b>CRÉDITOS:</b>\n` +
-        `├ <code>/add</code> - Dar créditos (Caja Chica)\n` +
-        `└ <code>/key</code> - Generar Key de acceso`;
-
-      return ctx
-        .editMessageText(text, {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback("⬅️ VOLVER", "BACK_TO_START")],
+            [Markup.button.callback("🔙 MENÚ PRINCIPAL", "BACK_TO_START")],
           ]),
         })
         .catch(() => {});
     }
 
     if (data === "BACK_TO_START") {
-      const profile = getUserProfile(uid, ctx.from.first_name);
+      const firstName = ctx.from.first_name;
+      const profileInfo = getUserProfile(uid, firstName);
 
-      // Obtenemos los mismos botones que el comando /start original
-      const staffData = Auth.authData.users[uid];
-      const vipData = Auth.authData.commonUsers[uid];
-      const isAdmin = uid === Auth.ADMIN_ID;
-      let buttons = [];
+      // Reconstruir botones de Start
+      let buttons = [
+        [Markup.button.callback("💎 ADQUIRIR VIP", "SHOW_PRICES")],
+        [Markup.button.callback("📚 GUÍA DE USO", "BACK_HELP")],
+        [Markup.button.url("👨‍💻 SOPORTE", Config.owner.supportLink)],
+      ];
 
-      if (isAdmin) {
-        buttons = [
-          [
-            Markup.button.callback(
-              "🛠️ CONFIGURACIÓN GLOBAL",
-              "BACK_TO_MAIN_CONFIG",
-            ),
-          ],
-          [Markup.button.callback("👮 PANEL DE STAFF", "HELP_STAFF")],
-          [Markup.button.callback("🚀 HERRAMIENTAS VIP", "BACK_HELP")],
-        ];
-      } else if (staffData) {
-        buttons = [
-          [Markup.button.callback("🛡️ COMANDOS STAFF", "HELP_STAFF")],
-          [Markup.button.callback("🚀 HERRAMIENTAS VIP", "BACK_HELP")],
-          [Markup.button.callback("👤 MI ESTADO", "SHOW_PROFILE")],
-        ];
-      } else {
-        buttons = [
-          [Markup.button.callback("💳 VER PLANES", "SHOW_PRICES")],
-          [Markup.button.callback("📖 AYUDA FREE", "BACK_HELP")],
-          [Markup.button.url("🛒 COMPRAR ACCESO", "https://t.me/devcrackpy")],
-        ];
+      // Si es Admin/Owner, mostrar botón de config
+      if (uid === Auth.ADMIN_ID) {
+        buttons.unshift([
+          Markup.button.callback("🛠️ CONFIGURACIÓN", "BACK_TO_MAIN_CONFIG"),
+        ]);
       }
 
-      const header =
-        `⚡ <b>SOCIETY . E X E</b> ⚡\n` +
-        `<i>"Knowledge is power, access is everything."</i>\n\n` +
-        `🚀 <b> . E X E CHECKER V3.0</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `El validador más rápido y preciso del mercado. Optimizado para profesionales.\n\n` +
-        `✨ <b>FEATURES:</b>\n` +
-        `├ ⚡ <b>Ultra-Speed:</b> Motor multi-hilo.\n` +
-        `├ 🛡️ <b>Anti-Ban:</b> Proxies residenciales.\n` +
-        `├ 🎯 <b>High Precision:</b> Gateway directo.\n` +
-        `└ 💎 <b>Soporte 24/7:</b> Update constante.\n` +
-        `━━━━━━━━━━━━━━━━━━`;
-      // EDITAMOS en lugar de borrar y enviar /start
       return ctx
-        .editMessageText(`${header}\n${profile}`, {
+        .editMessageText(
+          `${Config.text.headerStart}\n\n🚀 <b>CHECKER ${Config.bot.version}</b>\n${Config.decoration.line}\nSelecciona una opción:\n\n${profileInfo}`,
+          { parse_mode: "HTML", ...Markup.inlineKeyboard(buttons) },
+        )
+        .catch(() => {});
+    }
+
+    if (data === "SHOW_PROFILE") {
+      const profile = getUserProfile(uid, ctx.from.first_name);
+      return ctx
+        .editMessageText(profile, {
           parse_mode: "HTML",
-          ...Markup.inlineKeyboard(buttons),
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("🔙 VOLVER", "BACK_TO_START")],
+          ]),
         })
         .catch(() => {});
     }
 
-    if (data === "UPDATE_STATS") {
-      if (ctx.from.id !== Auth.ADMIN_ID) {
-        return ctx.answerCbQuery("🚫 No tienes permisos para esto.", {
-          show_alert: true,
-        });
-      }
+    if (data === "SHOW_PRICES") {
+      const pricesMessage =
+        `${Config.emojis.card} <b>TARIFAS PREMIUM</b>\n` +
+        `${Config.decoration.line}\n\n` +
+        `🔵 <b>DIARIO:</b> <code>${Config.prices.day}</code>\n` +
+        `🟢 <b>SEMANAL:</b> <code>${Config.prices.week}</code>\n` +
+        `🔴 <b>MENSUAL:</b> <code>${Config.prices.month}</code>\n\n` +
+        `<i>Pagos en: ${Config.prices.currency}</i>\n` +
+        `${Config.decoration.line}`;
 
-      try {
-        const uptime = process.uptime();
-        const hours = Math.floor(uptime / 3600);
-        const minutes = Math.floor((uptime % 3600) / 60);
-
-        const staffEntries = Object.values(Auth.authData.users);
-        const admins = staffEntries.filter((u) => u.rango === "ADMIN").length;
-        const sellers = staffEntries.filter((u) => u.rango === "SELLER").length;
-
-        const totalVips = Object.keys(Auth.authData.commonUsers).length;
-        const totalGroups = Object.keys(Auth.authData.groups).length;
-        const pendingKeys = Object.keys(Auth.authData.activeKeys).length;
-
-        const commonUsersArray = Object.values(Auth.authData.commonUsers);
-        const totalCreditsCirculating = commonUsersArray.reduce(
-          (acc, user) => acc + (parseInt(user.credits) || 0),
-          0,
-        );
-
-        const ecoStatus =
-          totalCreditsCirculating > 5000 ? "INFLACIÓN ALTA ⚠️" : "ESTABLE ✅";
-
-        const updateMsg =
-          `🛰 <b>DASHBOARD DE OPERACIONES</b>\n` +
-          `━━━━━━━━━━━━━━━━━━\n\n` +
-          `🖥 <b>ESTADO DEL CORE:</b>\n` +
-          `├ <b>Status:</b> <code>STABLE</code> 💹\n` +
-          `└ <b>Uptime:</b> <code>${hours}h ${minutes}m</code>\n\n` +
-          `👮 <b>FUERZA DE STAFF:</b>\n` +
-          `├ <b>Admins:</b> <code>${admins}</code>\n` +
-          `└ <b>Sellers:</b> <code>${sellers}</code>\n\n` +
-          `💎 <b>INFRAESTRUCTURA VIP:</b>\n` +
-          `├ <b>Usuarios:</b> <code>${totalVips}</code>\n` +
-          `├ <b>Grupos:</b> <code>${totalGroups}</code>\n` +
-          `└ <b>Keys Stock:</b> <code>${pendingKeys}</code>\n\n` +
-          `💰 <b>ECONOMÍA GLOBAL:</b>\n` +
-          `├ <b>Circulante:</b> <code>${totalCreditsCirculating.toLocaleString()} crds</code> 💸\n` +
-          `└ <b>Estado:</b> <code>${ecoStatus}</code>\n\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `<i>✨ Sincronizado: ${new Date().toLocaleTimeString()}</i>`;
-
-        await ctx.editMessageText(updateMsg, {
+      return ctx
+        .editMessageText(pricesMessage, {
           parse_mode: "HTML",
           ...Markup.inlineKeyboard([
-            [Markup.button.callback("🔄 REFRESCAR DATOS", "UPDATE_STATS")],
+            [Markup.button.url("🛒 Comprar Ahora", Config.owner.supportLink)],
             [Markup.button.callback("🔙 VOLVER", "BACK_TO_START")],
           ]),
+        })
+        .catch(() => {});
+    }
+
+    // ====================================
+    // --- 3. GESTIÓN DE ESTADOS (ADMIN) ---
+    // ====================================
+
+    if (data === "BACK_TO_MAIN_CONFIG") {
+      // SOLO EL OWNER (ADMIN_ID) PUEDE VER EL PANEL GLOBAL
+      if (uid !== Auth.ADMIN_ID)
+        return ctx.answerCbQuery("🚫 Acceso restringido al Owner.", {
+          show_alert: true,
         });
 
-        return ctx.answerCbQuery("📊 Estadísticas actualizadas");
-      } catch (err) {
-        console.error("Error al actualizar stats:", err);
-        return ctx.answerCbQuery("❌ Error al sincronizar datos.");
+      delete userState[uid];
+
+      return ctx
+        .editMessageText(
+          `⚙️ <b>CONFIGURACIÓN MAESTRA</b>\n${Config.decoration.line}\nSelecciona qué deseas gestionar:`,
+          {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+              [
+                Markup.button.callback("👮 STAFF", "SET_STATE_STAFF"),
+                Markup.button.callback("💰 CRÉDITOS", "SET_STATE_CRED"),
+              ],
+              [
+                Markup.button.callback("👥 GRUPOS", "SET_STATE_GRP"),
+                Markup.button.callback("🔑 KEYS", "SET_STATE_KEYS"),
+              ],
+              [Markup.button.callback("❌ CERRAR", "CLOSE_PANEL")],
+            ]),
+          },
+        )
+        .catch(() => {});
+    }
+
+    if (data === "CLOSE_PANEL") {
+      return ctx.deleteMessage().catch(() => {});
+    }
+
+    if (data.startsWith("SET_STATE_")) {
+      if (uid !== Auth.ADMIN_ID) return;
+      const type = data.replace("SET_STATE_", "");
+
+      userState[uid] = { step: "WAITING_ID", type: type };
+
+      let msg = "";
+      if (type === "STAFF")
+        msg =
+          "👮 <b>GESTIÓN STAFF</b>\nEnvía el <b>ID</b> del usuario a gestionar:";
+      if (type === "CRED")
+        msg = "💰 <b>GESTIÓN CRÉDITOS</b>\nEnvía el <b>ID</b> del usuario:";
+      if (type === "GRP")
+        msg = "👥 <b>GESTIÓN GRUPOS</b>\nEnvía el <b>ID</b> del grupo:";
+      if (type === "KEYS")
+        msg = "🔑 <b>GESTIÓN KEYS</b>\nEnvía la <b>KEY</b> a consultar:";
+
+      return ctx
+        .editMessageText(msg + `\n\n<i>Escribe "cancelar" para salir.</i>`, {
+          parse_mode: "HTML",
+        })
+        .catch(() => {});
+    }
+
+    // ====================================
+    // --- 4. ACCIONES DE GESTIÓN ---
+    // ====================================
+
+    // --- STAFF ---
+    if (data.startsWith("CONF_STAFF_")) {
+      const targetId = data.replace("CONF_STAFF_", "");
+      // Le mostramos al Admin los comandos exactos para copiar y pegar
+      await ctx.replyWithHTML(
+        `👮 <b>ASIGNACIÓN RÁPIDA</b>\nCopía y pega el comando:\n\n` +
+          `🔹 <b>ADMIN:</b> <code>/auth ${targetId} ADMIN</code>\n` +
+          `🔹 <b>SELLER:</b> <code>/auth ${targetId} SELLER</code>\n` +
+          `🔹 <b>MOD:</b> <code>/auth ${targetId} MOD</code>`,
+      );
+    }
+
+    // --- CRÉDITOS ---
+    if (data.startsWith("CONF_CRED_")) {
+      const targetId = data.replace("CONF_CRED_", "");
+      await ctx.reply(
+        `💰 Para añadir créditos, usa:\n<code>/addcredits ${targetId} 10</code>`,
+      );
+    }
+
+    // --- KEYS (Consultar) ---
+    if (data.startsWith("CONF_KEY_")) {
+      const key = data.replace("CONF_KEY_", "");
+      const info = Auth.authData.activeKeys[key];
+      if (info) {
+        await ctx.editMessageText(
+          `${Config.emojis.key} <b>KEY INFO</b>\nKEY: <code>${key}</code>\nDuración: ${info / 3600000} Horas\nEstado: ACTIVA`,
+          {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback("🔙 VOLVER", "BACK_TO_MAIN_CONFIG")],
+            ]),
+          },
+        );
+      } else {
+        await ctx.reply("❌ Key no encontrada o ya usada.");
       }
     }
 
-    await ctx.answerCbQuery().catch(() => {});
+    // --- REVOCAR (Acción Crítica BLINDADA) ---
+    if (data.startsWith("REV_ALL_")) {
+      const tid = data.replace("REV_ALL_", "");
+
+      // 1. BLINDAJE: Verificamos Jerarquía antes de ejecutar
+      if (!Auth.canManage(uid, tid)) {
+        return ctx.answerCbQuery(
+          "🚫 Jerarquía Insuficiente: No puedes revocar a este usuario.",
+          { show_alert: true },
+        );
+      }
+
+      Auth.unauthorize(tid);
+      CreditsManager.remove(tid, "ALL");
+
+      await ctx
+        .editMessageText(
+          `🛡️ <b>ACCESOS REVOCADOS</b>\n${Config.decoration.line}\n🆔 ID: <code>${tid}</code>\n⚠️ El usuario ha sido removido del Staff y su saldo quedó en 0.`,
+          {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+              [
+                Markup.button.callback(
+                  "🔙 VOLVER AL PANEL",
+                  "BACK_TO_MAIN_CONFIG",
+                ),
+              ],
+            ]),
+          },
+        )
+        .catch(() => {});
+
+      Logger.log(
+        "auth",
+        ctx,
+        `🗑️ <b>REVOKE ALL (PANEL)</b>\nTarget: <code>${tid}</code>\nAcción: Unauth + Wipe Credits`,
+      );
+    }
+
+    if (data.startsWith("REV_KEY_")) {
+      const key = data.replace("REV_KEY_", "");
+      if (Auth.authData.activeKeys[key]) {
+        delete Auth.authData.activeKeys[key];
+        Auth.saveKeys();
+        await ctx.reply("🗑️ Key eliminada correctamente.");
+        Logger.log(
+          "auth",
+          ctx,
+          `🗑️ <b>KEY ELIMINADA</b>\nKey: <code>${key}</code>`,
+        );
+      } else {
+        await ctx.reply("❌ Key no existe.");
+      }
+    }
+
+    // ====================================
+    // --- 5. STATS UPDATE (ACTUALIZADO) ---
+    // ====================================
+
+    if (data === "UPDATE_STATS") {
+      if (uid !== Auth.ADMIN_ID) return;
+
+      const uptime = process.uptime();
+      const hours = Math.floor(uptime / 3600);
+      const minutes = Math.floor((uptime % 3600) / 60);
+
+      const totalUsers = Object.keys(Auth.authData.users).length;
+      const totalVips = Object.keys(Auth.authData.commonUsers).length;
+
+      // Calcular Stats Reales por Rango
+      let admins = 0,
+        sellers = 0,
+        mods = 0;
+      Object.values(Auth.authData.users).forEach((u) => {
+        if (u.rango === "ADMIN") admins++;
+        if (u.rango === "SELLER") sellers++;
+        if (u.rango === "MOD") mods++; // ¡AHORA SÍ CONTAMOS MODS!
+      });
+
+      const statsMsg =
+        `${Config.emojis.stats} <b>DASHBOARD DE OPERACIONES</b>\n` +
+        `${Config.decoration.line}\n\n` +
+        `🖥 <b>ESTADO DEL CORE:</b>\n` +
+        `├ <b>Status:</b> <code>STABLE</code> 💹\n` +
+        `└ <b>Uptime:</b> <code>${hours}h ${minutes}m</code>\n\n` +
+        `👮 <b>FUERZA DE STAFF:</b>\n` +
+        `├ <b>Admins:</b> <code>${admins}</code>\n` +
+        `├ <b>Sellers:</b> <code>${sellers}</code>\n` +
+        `└ <b>Mods:</b> <code>${mods}</code>\n\n` +
+        `💎 <b>INFRAESTRUCTURA VIP:</b>\n` +
+        `├ <b>Usuarios VIP:</b> <code>${totalVips}</code>\n` +
+        `└ <b>Staff Total:</b> <code>${totalUsers}</code>\n\n` +
+        `${Config.decoration.line}\n` +
+        `${Config.emojis.tech} <b>NETWORK:</b> <code>CONNECTED</code>`;
+
+      await ctx
+        .editMessageText(statsMsg, {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("🔄 REFRESCAR DATOS", "UPDATE_STATS")],
+          ]),
+        })
+        .catch(() => {});
+    }
   });
 };

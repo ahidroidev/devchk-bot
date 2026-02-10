@@ -1,5 +1,4 @@
 const fs = require("fs");
-const { Markup } = require("telegraf");
 require("dotenv").config();
 const crypto = require("crypto");
 
@@ -15,213 +14,119 @@ const DURATIONS = {
   "1m": 30 * 24 * 60 * 60 * 1000,
 };
 
-// 2. ESTADO DEL BOT (Grupos ahora es un Objeto {})
+// 2. ESTADO DEL BOT
 let authData = {
-  users: {}, // { "id": { name, lastName, rango } }
-  groups: {}, // { "id": "Nombre del Grupo" }
-  commonUsers: {}, // { "id": { expiration, name, lastName } }
+  users: {}, // STAFF: { "id": { name, rango } }
+  commonUsers: {}, // VIPS:  { "id": { expiration, name, credits } }
   activeKeys: {},
+  bannedUsers: {}, // <--- NUEVO: Lista negra { "id": "Razón" }
   notifiedUsers: new Set(),
   cooldowns: new Map(),
 };
 
 // 3. PERSISTENCIA
 const saveIds = () => {
-  const data = {
-    users: authData.users,
-    groups: authData.groups, // Guardamos el objeto directamente
-  };
   try {
-    fs.writeFileSync(path, JSON.stringify(data, null, 2));
+    const dataToSave = {
+      users: authData.users,
+      commonUsers: authData.commonUsers,
+      bannedUsers: authData.bannedUsers, // Guardar baneados
+    };
+    fs.writeFileSync(path, JSON.stringify(dataToSave, null, 2));
   } catch (e) {
-    console.error("Error al escribir authorized_ids.json:", e);
+    console.error("Error guardando IDs:", e);
   }
 };
 
 const saveKeys = () => {
   try {
-    fs.writeFileSync(
-      keyPath,
-      JSON.stringify(
-        {
-          commonUsers: authData.commonUsers,
-          activeKeys: authData.activeKeys,
-        },
-        null,
-        2,
-      ),
-    );
+    fs.writeFileSync(keyPath, JSON.stringify(authData.activeKeys, null, 2));
   } catch (e) {
-    console.error("Error al escribir keys.json:", e);
+    console.error("Error guardando Keys:", e);
   }
 };
 
-const loadAll = () => {
+// Cargar datos al inicio
+try {
   if (fs.existsSync(path)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(path, "utf8"));
-      authData.users = raw.users || {};
-      // Lógica de migración: Si groups era un array, lo convertimos a objeto
-      if (Array.isArray(raw.groups)) {
-        authData.groups = {};
-        raw.groups.forEach((id) => {
-          authData.groups[id] = "Grupo Autorizado";
-        });
-      } else {
-        authData.groups = raw.groups || {};
-      }
-    } catch (e) {
-      authData.users = {};
-      authData.groups = {};
-    }
+    const data = JSON.parse(fs.readFileSync(path));
+    authData.users = data.users || {};
+    authData.commonUsers = data.commonUsers || {};
+    authData.bannedUsers = data.bannedUsers || {}; // Cargar baneados
   }
   if (fs.existsSync(keyPath)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(keyPath, "utf8"));
-      authData.commonUsers = raw.commonUsers || {};
-      authData.activeKeys = raw.activeKeys || {};
-    } catch (e) {
-      authData.commonUsers = {};
-    }
+    authData.activeKeys = JSON.parse(fs.readFileSync(keyPath));
   }
+} catch (e) {
+  console.error("Error cargando DB:", e);
+}
+
+// --- LÓGICA DE JERARQUÍA (IMPORTANTE) ---
+
+const getRole = (userId) => {
+  const uid = String(userId);
+  const adminIdStr = String(ADMIN_ID);
+
+  if (uid === adminIdStr) return "OWNER";
+
+  if (authData.users[uid]) {
+    return authData.users[uid].rango; // Retorna: ADMIN, SELLER o MOD
+  }
+
+  const vip = authData.commonUsers[uid];
+  if (vip && vip.expiration > Date.now()) {
+    return "VIP";
+  }
+
+  return "FREE";
 };
 
-loadAll();
+// Verifica si un rol tiene permiso sobre otro (Matemática de poder)
+const canManage = (issuerId, targetId) => {
+  const hierarchy = { OWNER: 5, ADMIN: 4, SELLER: 3, MOD: 2, VIP: 1, FREE: 0 };
 
-// 4. MIDDLEWARE DE PROTECCIÓN
-const authMiddleware = async (ctx, next) => {
-  if (ctx.message && ctx.message.text) {
-    console.log(`[LOG] User ${ctx.from.id} usó: ${ctx.message.text}`);
-  }
+  const issuerRole = getRole(issuerId);
+  const targetRole = getRole(targetId);
 
-  if (ctx.callbackQuery) return next();
+  // Regla de Oro: Nadie toca al Owner
+  if (targetRole === "OWNER") return false;
 
-  const userId = ctx.from?.id;
-  const chatId = ctx.chat?.id;
-  const firstName = ctx.from?.first_name || "Admin";
-  const lastName = ctx.from?.last_name || "";
-
-  // CAPTURA AUTOMÁTICA DE NOMBRE DE GRUPO
-  if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
-    if (authData.groups[chatId]) {
-      // Si el nombre en DB es diferente al actual del grupo, lo actualizamos
-      if (authData.groups[chatId] !== ctx.chat.title) {
-        authData.groups[chatId] = ctx.chat.title;
-        saveIds();
-      }
-    }
-  }
-
-  // AUTOMATIZACIÓN: Dueño
-  if (userId === ADMIN_ID && !authData.users[userId]) {
-    authData.users[userId] = {
-      name: firstName,
-      lastName: lastName,
-      rango: "OWNER",
-    };
-    saveIds();
-  }
-
-  const isAdmin = userId === ADMIN_ID || authData.users[userId];
-  const isGroupAuthorized = authData.groups[chatId];
-
-  if (isAdmin || isGroupAuthorized) {
-    return next();
-  }
-
-  const userData = authData.commonUsers[userId];
-  if (userData) {
-    if (Date.now() < userData.expiration) {
-      return next();
-    } else {
-      delete authData.commonUsers[userId];
-      saveKeys();
-      return ctx.reply("⌛ Tu acceso ha expirado.");
-    }
-  }
-
-  // MENSAJE DE ACCESO DENEGADO
-  if (ctx.updateType === "message" && ctx.message.text?.startsWith("/")) {
-    return ctx.replyWithHTML(
-      `🚫 <b>ACCESO RESTRINGIDO</b>\n━━━━━━━━━━━━━━━━━━\n` +
-        `No cuentas con una membresía activa para usar esta función.\n\n` +
-        `🆔 ID: <code>${ctx.from.id}</code>`,
-      Markup.inlineKeyboard([
-        [
-          Markup.button.callback("💳 Ver Planes", "SHOW_PRICES"),
-          Markup.button.callback("🔑 Canjear Key", "REDEEM_HELP"),
-        ],
-        [Markup.button.url("👨‍💻 Soporte Directo", "https://t.me/devcrackpy")],
-      ]),
-    );
-  }
+  // Para accionar, tu rango debe ser ESTRICTAMENTE mayor que el del objetivo
+  return (hierarchy[issuerRole] || 0) > (hierarchy[targetRole] || 0);
 };
 
-// 5. MÉTODOS DE ADMINISTRACIÓN (ACTUALIZADOS)
-const authorize = (id, rango = "MOD", name = "Staff/Grupo", limit = 0) => {
-  const numId = parseInt(id);
-  if (isNaN(numId)) return { success: false, type: "ERROR" };
+// --- GESTIÓN DE STAFF Y BANEOS ---
 
-  let type = "";
-  if (numId < 0) {
-    // Si es un grupo, name es el título del grupo
-    authData.groups[numId] = name || "Grupo Autorizado";
-    type = "GRUPO";
-  } else {
-    const validRanges = ["ADMIN", "SELLER", "MOD", "OWNER"];
-    type = validRanges.includes(rango.toUpperCase())
-      ? rango.toUpperCase()
-      : "MOD";
-
-    // Guardamos o actualizamos los datos con el nombre real obtenido
-    authData.users[numId] = {
-      name: name || "Usuario Desconocido",
-      rango: type,
-      limit: parseInt(limit) || 0,
-    };
-
-    console.log(
-      `[AUTH] 🎖️ ${type} autorizado: ${name} (${numId}) con cupo: ${limit}`,
-    );
-  }
-
+const authorize = (id, rango, name) => {
+  authData.users[id] = { rango, name };
+  // Si era VIP o Baneado, limpiamos eso
+  if (authData.commonUsers[id]) delete authData.commonUsers[id];
+  if (authData.bannedUsers[id]) delete authData.bannedUsers[id];
   saveIds();
-  return { success: true, type: type, name: name, limit: limit };
 };
 
 const unauthorize = (id) => {
-  const numId = parseInt(id);
-  if (isNaN(numId)) return { success: false };
-
-  let result = { success: false, type: "", name: "" };
-
-  if (numId < 0) {
-    if (authData.groups[numId]) {
-      result = { success: true, type: "GRUPO", name: authData.groups[numId] };
-      delete authData.groups[numId];
-      saveIds();
-    }
-  } else if (authData.users[numId]) {
-    const oldData = authData.users[numId];
-    result = {
-      success: true,
-      type: oldData.rango || "STAFF",
-      name: oldData.name,
-    };
-    delete authData.users[numId];
-    saveIds();
-  } else if (authData.commonUsers[numId]) {
-    const oldData = authData.commonUsers[numId];
-    result = { success: true, type: "KEY VIP", name: oldData.name };
-    delete authData.commonUsers[numId];
-    saveKeys();
-  }
-
-  if (result.success) {
-    console.log(`[UNAUTH] 🗑️ Removido: ${result.type} | ID: ${numId}`);
-  }
-  return result;
+  if (authData.users[id]) delete authData.users[id];
+  if (authData.commonUsers[id]) delete authData.commonUsers[id];
+  saveIds();
 };
+
+const banUserDB = (id, reason) => {
+  unauthorize(id); // Quitamos Staff/VIP
+  authData.bannedUsers[id] = reason;
+  saveIds();
+};
+
+const unbanUserDB = (id) => {
+  if (authData.bannedUsers[id]) delete authData.bannedUsers[id];
+  saveIds();
+};
+
+const isBanned = (id) => {
+  return !!authData.bannedUsers[id];
+};
+
+// --- GESTIÓN DE KEYS ---
 
 const generateKey = (type) => {
   const duration = DURATIONS[type] || DURATIONS["1d"];
@@ -232,49 +137,47 @@ const generateKey = (type) => {
   return key;
 };
 
-const redeemKey = (userId, key, firstName = "Usuario", lastName = "") => {
+const redeemKey = (userId, key, firstName = "Usuario") => {
   const duration = authData.activeKeys[key];
   if (duration) {
     const expiration = Date.now() + duration;
+    const currentCredits = authData.commonUsers[userId]?.credits || 0;
+
     authData.commonUsers[userId] = {
       expiration: expiration,
       name: firstName,
-      lastName: lastName,
+      credits: currentCredits + 50,
     };
     delete authData.activeKeys[key];
     saveKeys();
+    saveIds();
     return new Date(expiration).toLocaleString();
   }
   return false;
 };
 
-const clearPendingKeys = () => {
-  const count = Object.keys(authData.activeKeys).length;
-  authData.activeKeys = {};
-  saveKeys();
-  return count;
-};
-
-const checkCooldown = (userId, seconds) => {
-  const now = Date.now();
-  const userLastUse = authData.cooldowns.get(userId) || 0;
-  if (now - userLastUse < seconds * 1000) {
-    return ((seconds * 1000 - (now - userLastUse)) / 1000).toFixed(1);
+// --- MIDDLEWARE DE SEGURIDAD ---
+const authMiddleware = (ctx, next) => {
+  if (ctx.from && isBanned(ctx.from.id)) {
+    // Usuario baneado en DB no puede usar el bot
+    return;
   }
-  authData.cooldowns.set(userId, now);
-  return false;
+  return next();
 };
 
 module.exports = {
-  authMiddleware,
-  authorize,
-  unauthorize,
   ADMIN_ID,
   authData,
+  saveIds,
   saveKeys,
+  getRole,
+  canManage,
+  authorize,
+  unauthorize,
+  banUserDB, // Nuevo
+  unbanUserDB, // Nuevo
+  isBanned, // Nuevo
   generateKey,
   redeemKey,
-  clearPendingKeys,
-  checkCooldown,
-  saveIds,
+  authMiddleware,
 };
