@@ -1,75 +1,42 @@
 // funcionalidades/logger.js
-const Config = require("../config.js");
+// SISTEMA DE LOGS CENTRALIZADO V3
 
-class Logger {
-  constructor() {
-    this.bot = null;
-    this.channelId = process.env.LOG_CHANNEL_ID;
-    this.queue = [];
-    this.isProcessing = false;
+// Importamos el Cerebro para saber dónde enviar los mensajes
+const Config = require("../config");
+
+/**
+ * Función principal de Logs
+ * @param {string} level - Nivel del log: 'live', 'dead', 'error', 'info'
+ * @param {object} ctx - Contexto de Telegraf (necesario para usar telegram.sendMessage)
+ * @param {string} message - El mensaje HTML a enviar
+ */
+async function log(level, ctx, message) {
+  // 1. Verificar si los logs están activados en el Config
+  if (!Config.logs.enabled) return;
+
+  // 2. Determinar a qué canal enviar según el nivel
+  let channelId = Config.logs.channels.default;
+
+  if (level === "live") {
+    channelId = Config.logs.channels.lives; // Canal de Lives
+  } else if (level === "error") {
+    channelId = Config.logs.channels.errors; // Canal de Errores
   }
 
-  // Inicializar
-  init(botInstance) {
-    this.bot = botInstance;
-    console.log("✅ Sistema de Logs V3 (Cola): ACTIVO");
-    this.processQueue();
-  }
+  // Si no hay ID de canal configurado, cancelamos para evitar errores
+  if (!channelId) return;
 
-  // Método principal para agregar logs
-  log(type, ctx, details) {
-    if (!this.channelId) return;
-
-    const style = Config.logs.logStyles[type] || {
-      emoji: "📝",
-      title: "LOG GENERADO",
-    };
-    const date = new Date().toLocaleString("es-CO", {
-      timeZone: "America/Bogota",
-    });
-
-    let userString = "SISTEMA";
-    let userId = "N/A";
-    let username = "---";
-
-    if (ctx && ctx.from) {
-      userString = ctx.from.first_name.replace(/<[^>]*>/g, "");
-      userId = ctx.from.id;
-      username = ctx.from.username ? `@${ctx.from.username}` : "Sin Alias";
-    }
-
-    const message =
-      `${style.emoji} <b>${style.title}</b>\n` +
-      `${Config.decoration.line}\n` +
-      `👤 <b>User:</b> <code>${userString}</code>\n` +
-      `🏷️ <b>Alias:</b> <code>${username}</code>\n` +
-      `🆔 <b>ID:</b> <code>${userId}</code>\n` +
-      `🕒 <b>Hora:</b> <code>${date}</code>\n\n` +
-      `📝 <b>DETALLE:</b>\n` +
-      `${details}\n` +
-      `${Config.decoration.line}`;
-
-    this.queue.push(message);
-  }
-
-  // Procesador Anti-Flood (1 mensaje cada 1.5s)
-  async processQueue() {
-    setInterval(async () => {
-      if (this.queue.length > 0 && this.bot) {
-        const msg = this.queue.shift();
-        try {
-          await this.bot.telegram.sendMessage(this.channelId, msg, {
-            parse_mode: "HTML",
-          });
-        } catch (error) {
-          console.error("⚠️ Error enviando Log:", error.message);
-          if (error.response && error.response.error_code === 429) {
-            this.queue.unshift(msg);
-          }
-        }
-      }
-    }, 1500);
+  // 3. Enviar el mensaje
+  try {
+    // Usamos ctx.telegram para enviar directamente al canal ID
+    await ctx.telegram.sendMessage(channelId, message, { parse_mode: "HTML" });
+  } catch (err) {
+    // Si falla (ej: bot no es admin en el canal), solo lo mostramos en consola
+    console.error(
+      `[LOGGER ERROR] No se pudo enviar log al canal ${channelId}:`,
+      err.message,
+    );
   }
 }
 
-module.exports = new Logger();
+module.exports = { log };

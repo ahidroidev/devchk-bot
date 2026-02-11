@@ -7,7 +7,7 @@ const db = new Database("society.db", { verbose: null });
 // MODO WAL: Velocidad y seguridad crítica
 db.pragma("journal_mode = WAL");
 
-console.log("🔋 [SQLITE] Motor iniciado: society.db");
+console.log("🔋 [SQLITE] Base de datos conectada.");
 
 // --- INICIALIZACIÓN DE TABLAS ---
 const initDB = () => {

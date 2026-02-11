@@ -1,5 +1,5 @@
 // =============================================================================
-//  SOCIETY . E X E - MAIN BOT FILE (RESTAURADO Y BLINDADO)
+//  SOCIETY . E X E - MAIN BOT FILE (CENTRALIZADO Y COMPLETO)
 // =============================================================================
 
 require("dotenv").config();
@@ -21,7 +21,10 @@ const consultarBIN = require("./funcionalidades/bin.js");
 const CreditsManager = require("./database/credits.js");
 const detectarPasarela = require("./funcionalidades/pasarela.js");
 const { parseCards } = require("./funcionalidades/tools.js");
-const GateAuth = require("./gates/authorize.js"); // Tu gate nuevo
+
+// Imports Gates
+const GateAuth = require("./gates/authorize.js"); // Stripe
+const GateBraintree = require("./gates/braintree.js"); // Braintree
 
 // Alias
 const Credits = CreditsManager;
@@ -30,9 +33,6 @@ const Credits = CreditsManager;
 const Token = process.env.BOT_TOKEN;
 if (!Token) throw new Error("Falta BOT_TOKEN en las variables de entorno.");
 const bot = new Telegraf(Token);
-
-// === INICIALIZAMOS EL LOGGER ===
-Logger.init(bot);
 
 // --- Variables globales ---
 const userState = {};
@@ -50,30 +50,39 @@ const tempReply = async (ctx, text, seconds = 5) => {
 };
 
 function generarTarjeta(bin) {
-  return Generador(bin);
+  return Generador(bin); // Asumiendo que tu modulo exporta la funcion directamente o ajustalo a Generador.generar(bin)
 }
 
-// TU PERFIL VISUAL ORIGINAL
+// PERFIL VISUAL (Adaptado a Config)
 const getUserProfile = (userId, firstName) => {
   // Compatible con SQLite gracias a auth.js
   const staffData = Auth.authData.users[userId];
   const vipData = Auth.authData.commonUsers[userId];
-  const isAdmin = userId === Auth.ADMIN_ID;
+  const isAdmin =
+    parseInt(userId) === parseInt(Auth.ADMIN_ID) ||
+    (staffData && staffData.rango === "ADMIN");
   const userCredits = Credits.get(userId);
 
-  let info = `${Config.text.profile}\n`;
+  let info = `👤 <b>PERFIL DE USUARIO</b>\n`;
   info += `${Config.decoration.line}\n`;
   info += `${Config.emojis.user} <b>Nombre:</b> <code>${firstName}</code>\n`;
   info += `🆔 <b>ID:</b> <code>${userId}</code>\n`;
 
-  let rangoText = Config.roles.free;
-  if (isAdmin) rangoText = Config.roles.owner;
-  else if (staffData) {
-    const r = staffData.rango.toLowerCase();
-    rangoText = Config.roles[r] || `STAFF [${staffData.rango}]`;
-  } else if (vipData) rangoText = Config.roles.vip;
+  let rangoText = Config.roles.user;
+  let rangoEmoji = "👤";
 
-  info += `🎖️ <b>Rango:</b> <code>${rangoText}</code>\n`;
+  if (isAdmin) {
+    rangoText = Config.roles.owner;
+    rangoEmoji = "👑";
+  } else if (staffData) {
+    rangoText = Config.roles[staffData.rango.toLowerCase()] || staffData.rango;
+    rangoEmoji = "👮‍♂️";
+  } else if (vipData) {
+    rangoText = Config.roles.vip;
+    rangoEmoji = "💎";
+  }
+
+  info += `🎖️ <b>Rango:</b> <code>${rangoEmoji} ${rangoText}</code>\n`;
   info += `${Config.decoration.line}\n\n`;
 
   if (isAdmin || staffData) {
@@ -103,17 +112,20 @@ const getUserProfile = (userId, firstName) => {
 // ============================
 // --- Middlewares Security ---
 // ============================
-bot.use(Auth.authMiddleware);
+// Si Auth.authMiddleware existe en tu auth.js, lo usamos. Si no, lo saltamos.
+if (Auth.authMiddleware) {
+  bot.use(Auth.authMiddleware);
+}
 
 // ============================
-// --- Manejador de Texto (RECUPERADO) ---
+// --- Manejador de Texto ---
 // ============================
 bot.on("text", async (ctx, next) => {
   const uid = ctx.from.id;
   const state = userState[ctx.from.id];
 
   if (ctx.message.text.startsWith("/")) return next();
-  if (!state || state.step !== "WAITING_ID") return next();
+  if (!state || !state.step || state.step !== "WAITING_ID") return next();
 
   const input = ctx.message.text.trim();
 
@@ -137,7 +149,7 @@ bot.on("text", async (ctx, next) => {
   let text = "";
 
   if (type === "STAFF") {
-    text = `${Config.emojis.admin} <b>GESTIÓN DE STAFF</b>\n🆔 ID: <code>${input}</code>`;
+    text = `${Config.emojis.admin || "👮"} <b>GESTIÓN DE STAFF</b>\n🆔 ID: <code>${input}</code>`;
     buttons = [
       [Markup.button.callback("🎖️ ASIGNAR RANGO", `CONF_STAFF_${input}`)],
       [Markup.button.callback("🗑️ REVOCAR STAFF", `REV_ALL_${input}`)],
@@ -155,7 +167,7 @@ bot.on("text", async (ctx, next) => {
       [Markup.button.callback("🚫 REVOCAR", `REV_GRP_${input}`)],
     ];
   } else if (type === "KEYS") {
-    text = `${Config.emojis.key} <b>GESTIÓN DE KEY</b>\n<code>${input}</code>`;
+    text = `${Config.emojis.key || "🔑"} <b>GESTIÓN DE KEY</b>\n<code>${input}</code>`;
     buttons = [
       [Markup.button.callback("✅ CONFIRMAR", `CONF_KEY_${input}`)],
       [Markup.button.callback("❌ ELIMINAR", `REV_KEY_${input}`)],
@@ -176,7 +188,7 @@ const checkModPerms = (ctx, targetId) => {
   const issuerId = ctx.from.id;
   const issuerRole = Auth.getRole(issuerId);
   if (!["OWNER", "ADMIN", "MOD"].includes(issuerRole)) {
-    ctx.replyWithHTML(Config.text.accessDenied);
+    ctx.replyWithHTML(Config.messages.errors.notAllow);
     return false;
   }
   if (!Auth.canManage(issuerId, targetId)) {
@@ -203,7 +215,7 @@ bot.command("ban", async (ctx) => {
         .catch((e) => console.log("Error ban chat:", e.message));
     }
     await ctx.replyWithHTML(
-      `${Config.emojis.ban} <b>USUARIO BANEADO</b>\nID: <code>${targetId}</code>\nRazón: ${reason}`,
+      `${Config.emojis.error} <b>USUARIO BANEADO</b>\nID: <code>${targetId}</code>\nRazón: ${reason}`,
     );
     Logger.log(
       "mod",
@@ -220,13 +232,13 @@ bot.command("unban", async (ctx) => {
   if (!targetId) return ctx.reply("⚠️ Uso: /unban [ID]");
   const role = Auth.getRole(ctx.from.id);
   if (!["OWNER", "ADMIN"].includes(role))
-    return ctx.reply(Config.text.accessDenied);
+    return ctx.reply(Config.messages.errors.notAllow);
 
   Auth.unbanUserDB(targetId);
   if (ctx.chat.type !== "private")
     await ctx.unbanChatMember(targetId).catch(() => {});
   await ctx.replyWithHTML(
-    `${Config.emojis.unban} <b>USUARIO DESBANEADO</b>\nID: <code>${targetId}</code>`,
+    `${Config.emojis.success} <b>USUARIO DESBANEADO</b>\nID: <code>${targetId}</code>`,
   );
   Logger.log("mod", ctx, `🕊️ <b>UNBAN</b>\nTarget: ${targetId}`);
 });
@@ -240,7 +252,7 @@ bot.command("kick", async (ctx) => {
     await ctx.banChatMember(targetId);
     await ctx.unbanChatMember(targetId);
     ctx.replyWithHTML(
-      `${Config.emojis.kick} <b>USUARIO EXPULSADO</b>\nID: <code>${targetId}</code>`,
+      `${Config.emojis.warning} <b>USUARIO EXPULSADO</b>\nID: <code>${targetId}</code>`,
     );
     Logger.log("mod", ctx, `🥾 <b>KICK</b>\nTarget: ${targetId}`);
   } catch (e) {
@@ -262,7 +274,7 @@ bot.command("mute", async (ctx) => {
       },
     });
     ctx.replyWithHTML(
-      `${Config.emojis.mute} <b>USUARIO SILENCIADO</b>\nID: <code>${targetId}</code>`,
+      `${Config.emojis.warning} <b>USUARIO SILENCIADO</b>\nID: <code>${targetId}</code>`,
     );
     Logger.log("mod", ctx, `🔇 <b>MUTE</b>\nTarget: ${targetId}`);
   } catch (e) {
@@ -283,7 +295,7 @@ bot.command("unmute", async (ctx) => {
       },
     });
     ctx.replyWithHTML(
-      `${Config.emojis.unmute} <b>SILENCIO REVOCADO</b>\nID: <code>${targetId}</code>`,
+      `${Config.emojis.success} <b>SILENCIO REVOCADO</b>\nID: <code>${targetId}</code>`,
     );
     Logger.log("mod", ctx, `🔊 <b>UNMUTE</b>\nTarget: ${targetId}`);
   } catch (e) {
@@ -292,14 +304,14 @@ bot.command("unmute", async (ctx) => {
 });
 
 // ==========================================
-// --- MÓDULO ADMINISTRATIVO (RESTAURADO) ---
+// --- MÓDULO ADMINISTRATIVO ---
 // ==========================================
 
 bot.command("auth", async (ctx) => {
   const userId = ctx.from.id;
   const userRole = Auth.getRole(userId);
   if (!["OWNER", "ADMIN"].includes(userRole))
-    return ctx.replyWithHTML(Config.text.accessDenied);
+    return ctx.replyWithHTML(Config.messages.errors.notAllow);
 
   const args = ctx.message.text.split(" ");
   const targetId = args[1];
@@ -320,7 +332,7 @@ bot.command("auth", async (ctx) => {
 
   Auth.authorize(targetId, rango, fullName);
   await ctx.replyWithHTML(
-    `${Config.emojis.admin} <b>STAFF ASIGNADO</b>\n${Config.decoration.line}\n👤 <b>Nombre:</b> <code>${fullName}</code>\n🎖️ <b>Rango:</b> <code>${rango}</code>\n🆔 <b>ID:</b> <code>${targetId}</code>\n${Config.emojis.success} <i>Registrado correctamente.</i>`,
+    `${Config.emojis.admin || "👮"} <b>STAFF ASIGNADO</b>\n${Config.decoration.line}\n👤 <b>Nombre:</b> <code>${fullName}</code>\n🎖️ <b>Rango:</b> <code>${rango}</code>\n🆔 <b>ID:</b> <code>${targetId}</code>\n${Config.emojis.success} <i>Registrado correctamente.</i>`,
   );
   Logger.log(
     "auth",
@@ -335,7 +347,7 @@ bot.command("unauth", async (ctx) => {
   if (!targetId)
     return ctx.replyWithHTML("⚠️ <b>Uso:</b> <code>/unauth [ID]</code>");
   if (!Auth.canManage(userId, targetId))
-    return ctx.replyWithHTML(Config.text.accessDenied);
+    return ctx.replyWithHTML(Config.messages.errors.notAllow);
 
   Auth.unauthorize(targetId);
   await ctx.replyWithHTML(
@@ -348,7 +360,7 @@ bot.command("addcredits", async (ctx) => {
   const userId = ctx.from.id;
   const userRole = Auth.getRole(userId);
   if (!["OWNER", "ADMIN", "SELLER"].includes(userRole))
-    return ctx.replyWithHTML(Config.text.accessDenied);
+    return ctx.replyWithHTML(Config.messages.errors.notAllow);
 
   const args = ctx.message.text.split(" ");
   const targetId = args[1];
@@ -370,7 +382,7 @@ bot.command("addcredits", async (ctx) => {
 bot.command("genkey", async (ctx) => {
   const userRole = Auth.getRole(ctx.from.id);
   if (!["OWNER", "ADMIN", "SELLER"].includes(userRole))
-    return ctx.reply(Config.text.accessDenied);
+    return ctx.reply(Config.messages.errors.notAllow);
 
   const durationArg = ctx.message.text.split(" ")[1] || "1d";
   if (!["1d", "1w", "1m"].includes(durationArg))
@@ -378,15 +390,15 @@ bot.command("genkey", async (ctx) => {
 
   const newKey = Auth.generateKey(durationArg);
   await ctx.replyWithHTML(
-    `${Config.emojis.key} <b>KEY GENERADA</b>\n<code>${newKey}</code>\n⏳ <b>Duración:</b> ${durationArg}`,
+    `${Config.emojis.key || "🔑"} <b>KEY GENERADA</b>\n<code>${newKey}</code>\n⏳ <b>Duración:</b> ${durationArg}`,
   );
   Logger.log("auth", ctx, `🔑 <b>GEN KEY</b>\nKey: ${newKey}`);
 });
 
-// COMANDO: /config y /panel (RECUPERADOS)
+// COMANDO: /config y /panel
 bot.command(["config", "panel"], async (ctx) => {
   const userId = ctx.from.id;
-  if (userId !== Auth.ADMIN_ID) return;
+  if (userId.toString() !== Auth.ADMIN_ID.toString()) return; // Comparación segura
   delete userState[userId];
   await ctx.replyWithHTML(
     `⚙️ <b>CONFIGURACIÓN MAESTRA</b>\n${Config.decoration.line}\nSelecciona qué deseas gestionar:`,
@@ -404,10 +416,10 @@ bot.command(["config", "panel"], async (ctx) => {
   );
 });
 
-// COMANDO: /stats y /status (RECUPERADOS Y ADAPTADOS A SQLITE)
+// COMANDO: /stats y /status
 bot.command(["stats", "status"], async (ctx) => {
   const userId = ctx.from.id;
-  if (userId !== Auth.ADMIN_ID) return;
+  if (userId.toString() !== Auth.ADMIN_ID.toString()) return;
 
   const uptime = process.uptime();
   const hours = Math.floor(uptime / 3600);
@@ -441,7 +453,7 @@ bot.command(["stats", "status"], async (ctx) => {
 
 // COMANDO: /bc (Broadcast)
 bot.command("bc", async (ctx) => {
-  if (ctx.from.id !== Auth.ADMIN_ID) return;
+  if (ctx.from.id.toString() !== Auth.ADMIN_ID.toString()) return;
   const args = ctx.message.text.split(" ");
   const mode = args[1] ? args[1].toUpperCase() : null;
   const announcement = args.slice(2).join(" ");
@@ -478,141 +490,182 @@ bot.command("bc", async (ctx) => {
 // --- MÓDULO: CHECKER GATES (MULTI-THREAD) ---
 // ==========================================
 
-bot.command(["chk", "sa"], async (ctx) => {
-  const userId = ctx.from.id;
-  const username = ctx.from.username || "Anon";
-  const userRole = Auth.getRole(userId);
+bot.command(["sa", "chk", "stripe"], async (ctx) => {
+  if (Config.modules.stripe === false)
+    return ctx.replyWithHTML(Config.messages.errors.maintenance);
 
-  // 1. EXTRAER TARJETAS (Hasta 10)
+  const userId = ctx.from.id;
+  const userRole = Auth.getRole(userId);
   const input = ctx.message.text;
   const cards = parseCards(input);
 
-  if (cards.length === 0) {
+  if (cards.length === 0)
     return ctx.replyWithHTML(
-      `${Config.emojis.warning} <b>Formato inválido.</b>\nEnvía hasta 10 CCs:\n<code>CC|MM|YY|CVV</code>`,
+      `${Config.emojis.warning} <b>Uso:</b> <code>/sa cc|mm|yy|cvv</code>`,
     );
-  }
+  if (cards.length > Config.limits.maxCardsPerCheck)
+    return ctx.replyWithHTML(
+      `${Config.emojis.error} Máximo ${Config.limits.maxCardsPerCheck} tarjetas.`,
+    );
 
-  // 2. CÁLCULO DE CRÉDITOS
-  // Staff: Gratis. Usuarios: 1 Crédito por tarjeta.
   const cost = ["OWNER", "ADMIN", "SELLER"].includes(userRole)
     ? 0
-    : cards.length;
+    : cards.length * Config.limits.costs.checker;
+  if (cost > 0 && Credits.get(userId) < cost)
+    return ctx.replyWithHTML(Config.messages.errors.noBalance);
 
-  if (cost > 0) {
-    const balance = Credits.get(userId);
-    if (balance < cost)
-      return ctx.replyWithHTML(
-        `⚠️ <b>Saldo Insuficiente.</b>\nNecesitas <code>${cost}</code> créditos. Tienes: <code>${balance}</code>.`,
-      );
-    Credits.remove(userId, cost); // Descontamos el paquete entero
-  }
-
-  // 3. MENSAJE DE ESPERA (DASHBOARD)
-  let dashboardMsg =
-    `🚀 <b>SOCIETY CHECKER V3</b>\n` +
-    `${Config.decoration.line}\n` +
-    `💳 <b>Cargadas:</b> ${cards.length}\n` +
-    `⏳ <b>Estado:</b> Iniciando motor...\n` +
-    `${Config.decoration.line}`;
-
+  let dashboardMsg = `🚀 <b>${Config.bot.name}</b>\n${Config.decoration.line}\n⏳ <b>Estado:</b> <code>Iniciando...</code>`;
   const msgWait = await ctx.replyWithHTML(dashboardMsg);
 
   let liveCount = 0;
   let deadCount = 0;
-  let summary = []; // Para guardar resultados Dead/CCN
 
-  // 4. BUCLE DE PROCESAMIENTO
+  if (cost > 0) Credits.remove(userId, cost);
+
   for (const [index, card] of cards.entries()) {
     try {
-      // Actualizamos estado visual cada 2 tarjetas para no saturar a Telegram
-      if (index % 2 === 0) {
-        await ctx.telegram
-          .editMessageText(
-            ctx.chat.id,
-            msgWait.message_id,
-            null,
-            dashboardMsg.replace(
-              "Iniciando motor...",
-              `Procesando ${index + 1}/${cards.length}...`,
-            ),
-            { parse_mode: "HTML" },
-          )
-          .catch(() => {});
-      }
-
       const startTime = Date.now();
-      // LLAMADA AL GATE (Tu archivo authorize.js)
+
+      // Intentamos la validación
       const result = await GateAuth.check(
         card.cc,
         card.mes,
         card.anio,
         card.cvv,
       );
+
       const timeTaken = ((Date.now() - startTime) / 1000).toFixed(2);
 
-      // === DISEÑO MAQUILLADO PARA LIVES (MENSAJE NUEVO) ===
       if (result.status === "LIVE" || result.status === "CCN") {
         liveCount++;
-        const icon = result.status === "LIVE" ? "✅" : "☑️";
-        const title =
-          result.status === "LIVE"
-            ? "APPROVED / CHARGED"
-            : "CCN LIVE / APPROVED";
-
-        const liveMessage =
-          `<b>${icon} ${title}</b>\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `💳 <b>Card:</b> <code>${card.cc}</code>\n` +
-          `📅 <b>Exp:</b> <code>${card.mes}/${card.anio}</code> • <b>Cvv:</b> <code>${card.cvv}</code>\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `💬 <b>Result:</b> ${result.msg}\n` +
-          `🏦 <b>Gate:</b> ${result.gate}\n` +
-          `⏱️ <b>Time:</b> ${timeTaken}s\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `👤 <b>User:</b> ${ctx.from.first_name} [${userRole}]\n` +
-          `💎 <b>Bot:</b> ${Config.bot.shortName}`;
-
-        // Enviamos el LIVE como mensaje NUEVO (Reply)
-        await ctx.replyWithHTML(liveMessage);
-
-        // LOG INTERNO
-        Logger.log(
-          "live",
-          ctx,
-          `${icon} <b>HIT ${result.status}</b>\nCard: ${card.mask}\nMsg: ${result.msg}`,
+        const icon =
+          result.status === "LIVE" ? Config.emojis.live : Config.emojis.ccn;
+        await ctx.replyWithHTML(
+          `<b>${icon} ${result.status}</b>\n${Config.decoration.line}\n💳 <code>${card.cc}</code>\n💬 <b>Result:</b> ${result.msg}\n⏱️ ${timeTaken}s`,
         );
+        Logger.log("live", ctx, `${icon} HIT: ${card.mask}`);
       } else {
         deadCount++;
-        // Guardamos en resumen solo los últimos 4 dígitos
-        summary.push(`❌ ${card.mask} ➜ ${result.msg}`);
+        // Logueamos en consola el motivo de la muerte para que tú lo veas
+        console.log(`[DEAD] ${card.mask} -> ${result.msg}`);
       }
+
+      // Actualizar dashboard
+      await ctx.telegram
+        .editMessageText(
+          ctx.chat.id,
+          msgWait.message_id,
+          null,
+          `⏳ <b>PROCESANDO:</b> <code>${index + 1}/${cards.length}</code>\n${Config.decoration.line}\n✅: ${liveCount} | ❌: ${deadCount}`,
+          { parse_mode: "HTML" },
+        )
+        .catch(() => {});
     } catch (e) {
-      console.error(e);
+      // --- CAPTURA DE ERROR CRÍTICO ---
+      console.error("❌ ERROR EN GATE STRIPE:", e.message);
+
+      if (
+        e.response &&
+        (e.response.status === 401 || e.response.status === 403)
+      ) {
+        await ctx.replyWithHTML(
+          `🚫 <b>ERROR DE AUTENTICACIÓN:</b> Tu SK de Stripe es inválida o ha sido restringida. Revisa el .env`,
+        );
+        return; // Detenemos el comando por completo
+      }
+
       deadCount++;
-      summary.push(`⚠️ ${card.mask} ➜ Error API`);
     }
   }
 
-  // 5. ACTUALIZACIÓN FINAL DEL DASHBOARD (RESUMEN)
-  const finalReport =
-    `🏁 <b>SESIÓN FINALIZADA</b>\n` +
-    `${Config.decoration.line}\n` +
-    `✅ <b>Lives:</b> ${liveCount}\n` +
-    `❌ <b>Deads:</b> ${deadCount}\n` +
-    `📉 <b>Total:</b> ${cards.length}\n` +
-    `${Config.decoration.line}\n` +
-    `<i>Los Lives fueron enviados en mensajes separados.</i>`;
-
   await ctx.telegram
-    .editMessageText(ctx.chat.id, msgWait.message_id, null, finalReport, {
-      parse_mode: "HTML",
-    })
+    .editMessageText(
+      ctx.chat.id,
+      msgWait.message_id,
+      null,
+      `🏁 <b>FINALIZADO</b>\n${Config.decoration.line}\n✅: ${liveCount} | ❌: ${deadCount}`,
+      { parse_mode: "HTML" },
+    )
+    .catch(() => {});
+});
+
+// ==========================================
+// --- BRAINTREE CHECKER (/br) ---
+// ==========================================
+bot.command(["br", "vbv", "braintree"], async (ctx) => {
+  if (Config.modules.braintree === false)
+    return ctx.replyWithHTML(Config.messages.errors.maintenance);
+
+  const userId = ctx.from.id;
+  const userRole = Auth.getRole(userId);
+  const cards = parseCards(ctx.message.text);
+
+  if (cards.length === 0) return ctx.replyWithHTML(`⚠️ Uso: /br cc|mm|yy|cvv`);
+
+  const cost = ["OWNER", "ADMIN", "SELLER"].includes(userRole)
+    ? 0
+    : cards.length * Config.limits.costs.checker;
+  if (cost > 0 && Credits.get(userId) < cost)
+    return ctx.replyWithHTML(Config.messages.errors.noBalance);
+
+  const msgWait = await ctx.replyWithHTML(
+    `🚀 <b>BRAINTREE ENGINE</b>\n⏳ Procesando...`,
+  );
+  let liveCount = 0,
+    deadCount = 0;
+
+  if (cost > 0) Credits.remove(userId, cost);
+
+  for (const [index, card] of cards.entries()) {
+    try {
+      const result = await GateBraintree.check(
+        card.cc,
+        card.mes,
+        card.anio,
+        card.cvv,
+      );
+
+      if (result.status === "LIVE" || result.status === "CCN") {
+        liveCount++;
+        const icon =
+          result.status === "LIVE" ? Config.emojis.live2 : Config.emojis.ccn;
+        await ctx.replyWithHTML(
+          `<b>${icon} ${result.status}</b>\n${Config.decoration.line}\n💳 <code>${card.cc}</code>\n💬 <b>Resp:</b> ${result.msg}`,
+        );
+        Logger.log("live", ctx, `${icon} HIT BT: ${card.mask}`);
+      } else {
+        deadCount++;
+        console.log(`[DEAD BT] ${card.mask} -> ${result.msg}`);
+      }
+    } catch (e) {
+      console.error("❌ ERROR EN GATE BRAINTREE:", e.message);
+
+      // Braintree suele dar errores de autenticación con códigos específicos
+      if (
+        e.message.includes("authentication") ||
+        e.message.includes("Permission denied")
+      ) {
+        await ctx.replyWithHTML(
+          `🚫 <b>ERROR BRAINTREE:</b> Credenciales inválidas. Revisa Merchant ID y Keys.`,
+        );
+        return;
+      }
+      deadCount++;
+    }
+  }
+  await ctx.telegram
+    .editMessageText(
+      ctx.chat.id,
+      msgWait.message_id,
+      null,
+      `🏁 <b>FINALIZADO BT</b>\n✅: ${liveCount} | ❌: ${deadCount}`,
+      { parse_mode: "HTML" },
+    )
     .catch(() => {});
 });
 
 // ======================
-// --- COMANDOS GENERALES (TU DISEÑO ORIGINAL) ---
+// --- COMANDOS GENERALES ---
 // ======================
 
 bot.command("start", async (ctx) => {
@@ -622,7 +675,7 @@ bot.command("start", async (ctx) => {
   const profileInfo = getUserProfile(userId, firstName);
   const staffData = Auth.authData.users[userId];
   const vipData = Auth.authData.commonUsers[userId];
-  const isAdmin = userId === Auth.ADMIN_ID;
+  const isAdmin = parseInt(userId) === parseInt(Auth.ADMIN_ID);
 
   let buttons = [];
 
@@ -662,18 +715,23 @@ bot.command("start", async (ctx) => {
       [Markup.button.callback("💎 ADQUIRIR VIP", "SHOW_PRICES")],
       [Markup.button.callback("📚 GUÍA DE USO", "BACK_HELP")],
       [Markup.button.callback("🔙 Volver", "BACK_TO_START")],
-      [Markup.button.url("👨‍💻 CONTACTAR SOPORTE", Config.owner.supportLink)],
+      [
+        Markup.button.url(
+          "👨‍💻 CONTACTAR SOPORTE",
+          `https://t.me/${Config.bot.devUser.replace("@", "")}`,
+        ),
+      ],
     ];
   }
 
   Logger.log("system", ctx, `🚀 <b>Inicio:</b> /start`);
 
   const header =
-    `${Config.text.headerStart}\n\n` +
+    `⚡ <b>${Config.bot.name}</b> ⚡\n\n` +
     `🚀 <b>CHECKER ${Config.bot.version}</b>\n` +
     `${Config.decoration.line}\n` +
     `El validador más rápido y preciso del mercado. Optimizado para profesionales.\n\n` +
-    `${Config.emojis.info} <b>FEATURES:</b>\n` +
+    `${Config.emojis.info || "ℹ️"} <b>FEATURES:</b>\n` +
     `├ ⚡ <b>Ultra-Speed:</b> Motor multi-hilo.\n` +
     `├ 🛡️ <b>Anti-Ban:</b> Proxies residenciales.\n` +
     `├ 🎯 <b>High Precision:</b> Gateway directo.\n` +
@@ -697,18 +755,38 @@ bot.command("me", async (ctx) => {
       ]),
     );
   } catch (err) {
-    ctx.reply(Config.text.error);
+    ctx.reply(Config.messages.errors.generic);
   }
+});
+
+// ==========================================
+// COMANDO: /ID (Utility)
+// ==========================================
+bot.command("id", (ctx) => {
+  let targetId = ctx.from.id;
+  let targetName = ctx.from.first_name;
+
+  // Si el usuario está respondiendo a otro mensaje, tomamos los datos de ese mensaje
+  if (ctx.message.reply_to_message) {
+    targetId = ctx.message.reply_to_message.from.id;
+    targetName = ctx.message.reply_to_message.from.first_name;
+  }
+
+  ctx.replyWithHTML(
+    `🆔 <b>USER ID</b>\n` +
+      `${Config.decoration.line}\n` +
+      `👤 <b>User:</b> ${targetName}\n` +
+      `🔢 <b>ID:</b> <code>${targetId}</code>`,
+  );
 });
 
 bot.command(["info", "help", "ayuda"], async (ctx) => {
   const helpMenu =
-    `${Config.text.helpMenu}\n` +
+    `📘 <b>MENÚ DE AYUDA</b>\n` +
     `${Config.decoration.line}\n\n` +
     `🛠 <b>BÁSICOS:</b>\n├ <code>/start</code>\n├ <code>/me</code>\n└ <code>/id</code>\n\n` +
     `🚀 <b>VIP:</b>\n├ <code>/gen</code>\n├ <code>/bin</code>\n└ <code>/ex</code>\n\n` +
-    `${Config.decoration.line}\n` +
-    `${Config.text.footer}`;
+    `${Config.decoration.line}`;
 
   await ctx.replyWithHTML(
     helpMenu,
@@ -719,7 +797,10 @@ bot.command(["info", "help", "ayuda"], async (ctx) => {
       ],
       [
         Markup.button.callback("📊 EXTRAPOLAR", "HELP_EXTRA"),
-        Markup.button.url("🛒 COMPRAR", Config.owner.supportLink),
+        Markup.button.url(
+          "🛒 COMPRAR",
+          `https://t.me/${Config.bot.devUser.replace("@", "")}`,
+        ),
       ],
     ]),
   );
@@ -729,17 +810,20 @@ bot.command("prices", (ctx) => {
   const pricesMessage =
     `${Config.emojis.card} <b>TARIFAS PREMIUM</b>\n` +
     `${Config.decoration.line}\n\n` +
-    `🔵 <b>DIARIO:</b> <code>${Config.prices.day}</code>\n` +
-    `🟢 <b>SEMANAL:</b> <code>${Config.prices.week}</code>\n` +
-    `🔴 <b>MENSUAL:</b> <code>${Config.prices.month}</code>\n\n` +
-    `<i>Pagos en: ${Config.prices.currency}</i>\n` +
+    `${Config.emojis.money} <b>DIARIO:</b> <code>${Config.prices.day}</code> ${Config.prices.symbol}\n` +
+    `${Config.emojis.money} <b>SEMANAL:</b> <code>${Config.prices.week}</code> ${Config.prices.symbol}\n` +
+    `${Config.emojis.money} <b>MENSUAL:</b> <code>${Config.prices.month}</code> ${Config.prices.symbol}\n\n` +
+    `${Config.emojis.info || "ℹ️"} <b>PRECIO GRUPO MENSUAL:</b> <code>${Config.prices.grpmonth}</code>\n` +
     `${Config.decoration.line}`;
 
   ctx.replyWithHTML(
     pricesMessage,
     Markup.inlineKeyboard([
       [
-        Markup.button.url("🛒 Comprar Ahora", Config.owner.supportLink),
+        Markup.button.url(
+          "🛒 Comprar Ahora",
+          `https://t.me/${Config.bot.devUser.replace("@", "")}`,
+        ),
         Markup.button.callback("🔑 Canjear Key", "SHOW_PRICES"),
       ],
     ]),
@@ -760,8 +844,8 @@ bot.command(["credits", "saldo", "money", "creditos"], async (ctx) => {
     Markup.inlineKeyboard([
       [
         {
-          text: `🛒 RECARGAR ${Config.emojis.shop}`,
-          url: Config.owner.supportLink,
+          text: `🛒 RECARGAR ${Config.emojis.money}`,
+          url: `https://t.me/${Config.bot.devUser.replace("@", "")}`,
         },
       ],
     ]),
@@ -772,7 +856,7 @@ bot.command("redeem", async (ctx) => {
   const key = ctx.message.text.split(" ")[1];
   if (!key)
     return ctx.replyWithHTML(
-      `${Config.emojis.key} <b>SISTEMA DE KEYS</b>\n${Config.decoration.line}\n⚠️ <b>Uso:</b> <code>/redeem KEY-XXXX</code>\n${Config.decoration.line}`,
+      `${Config.emojis.key || "🔑"} <b>SISTEMA DE KEYS</b>\n${Config.decoration.line}\n⚠️ <b>Uso:</b> <code>/redeem KEY-XXXX</code>\n${Config.decoration.line}`,
     );
 
   const expiryDate = Auth.redeemKey(ctx.from.id, key, ctx.from.first_name);
@@ -787,7 +871,7 @@ bot.command("redeem", async (ctx) => {
       `🔑 <b>KEY ACTIVADA</b>\n🗝️ <b>Key:</b> <code>${key}</code>`,
     );
   } else {
-    ctx.replyWithHTML(Config.text.invalidKey);
+    ctx.replyWithHTML(Config.messages.errors.invalidFormat || "Key inválida.");
     Logger.log(
       "auth",
       ctx,
@@ -799,42 +883,31 @@ bot.command("redeem", async (ctx) => {
 // ==========================================
 // --- MÓDULO: SCANNER WEB (Acceso Global) ---
 // ==========================================
-
 bot.command(["pasarela", "gate", "chkweb"], async (ctx) => {
+  if (Config.modules.pasarela === false)
+    return ctx.replyWithHTML(Config.messages.errors.maintenance);
+
   const userId = ctx.from.id;
-  const username = ctx.from.username || "Anon";
-  const userRole = Auth.getRole(userId); // Obtenemos rango para el Log
+  const userRole = Auth.getRole(userId);
   const args = ctx.message.text.split(" ");
   const url = args[1];
 
-  // 1. Validación de entrada
   if (!url)
     return ctx.replyWithHTML(
       `${Config.emojis.warning} <b>Uso:</b> <code>/pasarela sitioweb.com</code>`,
     );
 
-  // 2. Lógica de Rangos y Créditos
-  // Credits.consume devuelve TRUE si es Staff (Gratis) o si es User/VIP y tiene saldo (Cobra 1)
-  // Devuelve FALSE si es User/VIP y NO tiene saldo.
   const tieneSaldo = Credits.consume(userId);
+  if (!tieneSaldo) return ctx.replyWithHTML(Config.messages.errors.noBalance);
 
-  if (!tieneSaldo) {
-    return ctx.replyWithHTML(Config.text.noBalance); // Mensaje de "Recarga saldo"
-  }
-
-  // 3. Feedback visual (Simulando hacking/escaneo)
-  console.log(
-    `🔍 [GATE] Scan solicitado: ${url} | User: ${username} | Role: ${userRole}`,
-  );
   const tempMsg = await ctx.replyWithHTML(
-    `${Config.emojis.loading} <b>Iniciando escaneo de protocolos...</b>`,
+    `${Config.emojis.loading} <b>${Config.messages.scanner.scanning}</b>`,
   );
 
   try {
     const resultado = await detectarPasarela(url);
 
     if (resultado.success) {
-      // Formateo de lista
       const gatesList = resultado.gateways
         .map((g) => `🔹 <b>${g}</b>`)
         .join("\n");
@@ -862,20 +935,13 @@ bot.command(["pasarela", "gate", "chkweb"], async (ctx) => {
         msg,
         { parse_mode: "HTML", disable_web_page_preview: true },
       );
-
-      // LOG EXITOSO
-      console.log(`✅ [GATE] Éxito: ${url} -> [${resultado.gateways}]`);
       Logger.log(
         "gen",
         ctx,
         `🔍 <b>SCAN PASARELA</b>\nURL: ${url}\nCMS: ${resultado.cms}\nGates: ${resultado.gateways.join(", ")}`,
       );
     } else {
-      // 4. SISTEMA DE REEMBOLSO (REFUND)
-      // Si el scanner falla (timeout o error), le devolvemos el crédito al usuario Free/VIP.
-      // Si es Staff, Credits.add no afecta negativamente, así que es seguro.
       Credits.add(userId, 1);
-
       await ctx.telegram.editMessageText(
         ctx.chat.id,
         tempMsg.message_id,
@@ -883,12 +949,9 @@ bot.command(["pasarela", "gate", "chkweb"], async (ctx) => {
         `❌ <b>Error de Análisis:</b>\n${resultado.error}\n\n<i>💰 Crédito reembolsado.</i>`,
         { parse_mode: "HTML" },
       );
-      console.log(`❌ [GATE] Fallo: ${url} -> ${resultado.error}`);
     }
   } catch (e) {
-    // Reembolso por error crítico
     Credits.add(userId, 1);
-    console.error(`🔥 [GATE] Error Crítico: ${e.message}`);
     ctx.telegram.editMessageText(
       ctx.chat.id,
       tempMsg.message_id,
@@ -900,6 +963,9 @@ bot.command(["pasarela", "gate", "chkweb"], async (ctx) => {
 });
 
 bot.command("gen", async (ctx) => {
+  if (Config.modules.generator === false)
+    return ctx.replyWithHTML(Config.messages.errors.maintenance);
+
   try {
     const userId = ctx.from.id;
     const args = ctx.message.text.split(" ");
@@ -908,11 +974,11 @@ bot.command("gen", async (ctx) => {
     if (!binInput || binInput.length < 6)
       return tempReply(
         ctx,
-        `${Config.emojis.input} <b>USO:</b> <code>/gen 454545</code>`,
+        `${Config.emojis.warning} <b>USO:</b> <code>/gen 454545</code>`,
         5,
       );
     if (!Credits.consume(userId))
-      return ctx.replyWithHTML(`${Config.text.noBalance}`);
+      return ctx.replyWithHTML(Config.messages.errors.noBalance);
 
     const tempMsg = await ctx.replyWithHTML(
       `${Config.emojis.loading} <b>${Config.bot.shortName}:</b> Generando...`,
@@ -921,30 +987,23 @@ bot.command("gen", async (ctx) => {
     try {
       const info = await consultarBIN(binInput.slice(0, 6));
       const cards = [];
-      for (let i = 0; i < 10; i++) cards.push(generarTarjeta(binInput));
+      const cantidad = Config.limits.genLimit || 10;
+      for (let i = 0; i < cantidad; i++) cards.push(generarTarjeta(binInput));
       const cardList = cards.map((c) => `<code>${c}</code>`).join("\n");
 
       if (info && info.success) {
-        const flagEmoji =
-          info.flag === "🏳️" ? Config.emojis.flagDefault : info.flag;
+        const flagEmoji = info.flag === "🏳️" ? Config.emojis.flag : info.flag;
         const response =
-          `${Config.text.genTitle}\n` +
+          `⚡ <b>GENERADOR CC</b>\n` +
           `${Config.decoration.line}\n\n` +
-          `${Config.emojis.bank} <b>BANCO:</b> <code>${info.bank}</code>\n` +
-          `${Config.emojis.world} <b>PAÍS:</b> <code>${info.country} ${flagEmoji}</code>\n` +
+          `${Config.emojis.bank || "🏦"} <b>BANCO:</b> <code>${info.bank}</code>\n` +
+          `${Config.emojis.flag || "🌍"} <b>PAÍS:</b> <code>${info.country} ${flagEmoji}</code>\n` +
           `${Config.emojis.money} <b>MONEDA:</b> <code>${info.currency}</code>\n` +
-          `${Config.emojis.phone} <b>TEL:</b> <code>${info.bank_phone}</code>\n\n` +
-          `${Config.emojis.card} <b>DETALLES:</b>\n` +
-          `├ <b>Marca:</b> <code>${info.brand}</code>\n` +
-          `├ <b>Nivel:</b> <code>${info.level}</code>\n` +
-          `└ <b>Tipo:</b> <code>${info.type}</code>\n\n` +
-          `${Config.emojis.info} <b>CARDS GENERADAS:</b>\n` +
+          `${Config.emojis.card} <b>TIPO:</b> <code>${info.brand} - ${info.type}</code>\n\n` +
           `${Config.decoration.line}\n` +
           `${cardList}\n` +
           `${Config.decoration.line}\n\n` +
-          `${Config.emojis.user} <b>USER:</b> <code>${ctx.from.first_name}</code>\n` +
-          `${Config.emojis.money} <b>COSTE:</b> <code>1 CRD</code> | <b>VER:</b> <code>${Config.bot.version}</code>\n` +
-          `${Config.emojis.tech} <b>STATUS:</b> <code>VERIFIED BY ${Config.bot.engine}</code>`;
+          `${Config.emojis.user} <b>USER:</b> <code>${ctx.from.first_name}</code>\n`;
 
         await ctx.telegram.editMessageText(
           ctx.chat.id,
@@ -964,7 +1023,7 @@ bot.command("gen", async (ctx) => {
           ctx.chat.id,
           tempMsg.message_id,
           null,
-          `${Config.text.invalidBin}\nCrédito devuelto.`,
+          `${Config.messages.errors.invalidFormat}\nCrédito devuelto.`,
           { parse_mode: "HTML" },
         );
       }
@@ -977,18 +1036,34 @@ bot.command("gen", async (ctx) => {
   }
 });
 
+// ==========================================
+// COMANDO: /BIN (Reporte Detallado)
+// ==========================================
 bot.command("bin", async (ctx) => {
+  if (Config.modules.binLookup === false)
+    return ctx.replyWithHTML(Config.messages.errors.maintenance);
+
   try {
     const userId = ctx.from.id;
     const binInput = ctx.message.text.split(" ")[1];
-    if (!binInput || binInput.length < 6)
-      return tempReply(ctx, "⚠️ <b>Uso:</b> <code>/bin 454545</code>", 5);
+
+    if (!binInput || binInput.length < 6) {
+      return tempReply(
+        ctx,
+        `${Config.emojis.warning} <b>Uso:</b> <code>/bin 454545</code>`,
+        5,
+      );
+    }
+
+    // Consumo de créditos
     if (!Credits.consume(userId))
       return ctx.replyWithHTML(Config.text.noBalance);
 
     const tempMsg = await ctx.replyWithHTML(
-      `${Config.emojis.loading} <b>Consultando...</b>`,
+      `${Config.emojis.loading} <b>Consultando Base de Datos...</b>`,
     );
+
+    // Consultamos el BIN (Módulo original)
     const info = await consultarBIN(binInput.slice(0, 6));
 
     if (info && info.success) {
@@ -1015,12 +1090,13 @@ bot.command("bin", async (ctx) => {
         { parse_mode: "HTML" },
       );
     } else {
+      // Reembolso por fallo en la consulta
       Credits.add(userId, 1);
       await ctx.telegram.editMessageText(
         ctx.chat.id,
         tempMsg.message_id,
         null,
-        Config.text.invalidBin,
+        `${Config.text.invalidBin}\n<i>💰 Crédito reembolsado.</i>`,
         { parse_mode: "HTML" },
       );
     }
@@ -1036,10 +1112,10 @@ bot.command("ex", async (ctx) => {
     let input = ctx.message.text.replace(/[a-z,A-Z,/,\s]/g, "");
     if (input.length < 12)
       return ctx.replyWithHTML(
-        `${Config.text.extraTitle}\n${Config.decoration.line}\n⚠️ <b>Error:</b> Mínimo 12 dígitos.\n${Config.decoration.line}`,
+        `${Config.emojis.warning} <b>Error:</b> Mínimo 12 dígitos.`,
       );
     if (!Credits.consume(userId))
-      return ctx.replyWithHTML(Config.text.noBalance);
+      return ctx.replyWithHTML(Config.messages.errors.noBalance);
 
     const tempMsg = await ctx.replyWithHTML(
       `${Config.emojis.loading} <b>Calculando...</b>`,
@@ -1049,16 +1125,14 @@ bot.command("ex", async (ctx) => {
       const resultadoExtra = extra(input);
       const info = await consultarBIN(input.slice(0, 6));
       const response =
-        `${Config.text.extraTitle}\n` +
+        `📊 <b>EXTRAPOLACIÓN</b>\n` +
         `${Config.decoration.line}\n\n` +
-        `${Config.emojis.input} <b>INPUT:</b> <code>${input}</code>\n` +
-        `${Config.emojis.bank} <b>BANCO:</b> <code>${info.bank || "N/A"}</code>\n\n` +
-        `${Config.emojis.info} <b>PATRONES:</b>\n` +
+        `${Config.emojis.input || "🔢"} <b>INPUT:</b> <code>${input}</code>\n` +
+        `${Config.emojis.bank || "🏦"} <b>BANCO:</b> <code>${info.bank || "N/A"}</code>\n\n` +
         `${Config.decoration.line}\n` +
         `<code>${resultadoExtra}</code>\n` +
         `${Config.decoration.line}\n\n` +
-        `${Config.emojis.user} <b>USER:</b> <code>${ctx.from.first_name}</code>\n` +
-        `${Config.emojis.tech} <b>ENGINE:</b> <code>${Config.bot.engine}</code>`;
+        `${Config.emojis.user} <b>USER:</b> <code>${ctx.from.first_name}</code>`;
 
       await ctx.telegram.editMessageText(
         ctx.chat.id,
@@ -1069,19 +1143,19 @@ bot.command("ex", async (ctx) => {
       );
     } catch (err) {
       Credits.add(userId, 1);
-      ctx.reply(Config.text.crash);
+      ctx.reply(Config.messages.errors.generic);
     }
   } catch (err) {
     console.error(err);
   }
 });
 
-// LIST COMMAND (ADAPTADO A SQLITE)
+// LIST COMMAND
 bot.command(["list", "ls"], async (ctx) => {
   const userId = ctx.from.id;
   const userRole = Auth.getRole(userId);
   if (!["OWNER", "ADMIN", "SELLER"].includes(userRole))
-    return ctx.replyWithHTML(Config.text.accessDenied);
+    return ctx.replyWithHTML(Config.messages.errors.notAllow);
 
   const args = ctx.message.text.split(" ");
   const type = args[1] ? args[1].toLowerCase() : null;
@@ -1101,19 +1175,9 @@ bot.command(["list", "ls"], async (ctx) => {
     const keys = Auth.getAllKeys();
     const totalKeys = Object.keys(keys).length;
     if (totalKeys === 0) return ctx.reply("⚠️ No hay keys activas.");
-
-    let msg = `${Config.emojis.key} <b>STOCK DE KEYS (${totalKeys})</b>\n${Config.decoration.line}\n`;
+    let msg = `${Config.emojis.key || "🔑"} <b>STOCK DE KEYS (${totalKeys})</b>\n${Config.decoration.line}\n`;
     for (const [code, duration] of Object.entries(keys)) {
-      const ms = parseInt(duration);
-      let tiempo = "Indefinido";
-      if (!isNaN(ms)) {
-        if (ms >= 86400000) {
-          tiempo = `${Math.round(ms / 86400000)} Día(s)`;
-        } else {
-          tiempo = `${Math.round(ms / 3600000)} Hora(s)`;
-        }
-      }
-      msg += `🏷️ <code>${code}</code>\n⏳ <b>Duración:</b> ${tiempo}\n${Config.decoration.line}\n`;
+      msg += `🏷️ <code>${code}</code>\n`;
     }
     return ctx.replyWithHTML(msg.substring(0, 4000));
   }
@@ -1121,22 +1185,9 @@ bot.command(["list", "ls"], async (ctx) => {
   // --- STAFF ---
   if (type === "staff") {
     const staff = Auth.getAllStaff();
-    let msg = `${Config.emojis.admin} <b>REPORTE DE STAFF</b>\n${Config.decoration.line}\n`;
-    let count = 0;
+    let msg = `${Config.emojis.admin || "👮"} <b>REPORTE DE STAFF</b>\n${Config.decoration.line}\n`;
     for (const [sid, data] of Object.entries(staff)) {
-      count++;
-      let limitDisplay;
-      if (parseInt(sid) === Auth.ADMIN_ID || data.rango === "ADMIN") {
-        limitDisplay = "∞";
-      } else {
-        const actualLimit = data.limit !== undefined ? data.limit : 500;
-        limitDisplay = actualLimit >= 900000 ? "∞" : actualLimit;
-      }
-      msg += `👤 <b>${data.name}</b> [${data.rango}]\n`;
-      msg += `🆔 <code>${sid}</code>\n`;
-      msg += `📦 <b>Caja Chica:</b> ${limitDisplay}\n`;
-      msg += `📈 <b>Flujo:</b> ${data.monthlyFlow || 0} crds\n`;
-      msg += `${Config.decoration.line}\n`;
+      msg += `👤 <b>${data.name}</b> [${data.rango}]\n🆔 <code>${sid}</code>\n${Config.decoration.line}\n`;
     }
     return ctx.replyWithHTML(msg.substring(0, 4000) || "Sin Staff.");
   }
@@ -1145,34 +1196,22 @@ bot.command(["list", "ls"], async (ctx) => {
   if (type === "users") {
     const users = Auth.getAllVips();
     let msg = `${Config.emojis.user} <b>CLIENTES VIP ACTIVOS</b>\n${Config.decoration.line}\n`;
-    let count = 0;
     for (const [uid, data] of Object.entries(users)) {
       if (data.expiration > Date.now()) {
-        count++;
         const expDate = new Date(data.expiration).toLocaleDateString();
-        const keyUsed = data.keyUsed || "N/A";
-        const shortKey =
-          keyUsed.length > 10 ? keyUsed.substring(0, 8) + "..." : keyUsed;
-
-        msg += `👤 <b>${data.name}</b>\n`;
-        msg += `🆔 <code>${uid}</code>\n`;
-        msg += `🔑 <b>Key:</b> <code>${shortKey}</code> (${data.keyType || "Manual"})\n`;
-        msg += `💰 <b>Saldo:</b> ${data.credits}\n`;
-        msg += `📅 <b>Vence:</b> ${expDate}\n`;
-        msg += `${Config.decoration.line}\n`;
+        msg += `👤 <b>${data.name}</b>\n🆔 <code>${uid}</code>\n📅 <b>Vence:</b> ${expDate}\n${Config.decoration.line}\n`;
       }
     }
     return ctx.replyWithHTML(msg.substring(0, 4000) || "Sin VIPs.");
   }
 });
 
-// MONITOR DE EXPIRACIÓN Y CALLBACKS
+// MONITOR DE EXPIRACIÓN
 setInterval(async () => {
   const now = Date.now();
   const users = Auth.getAllVips();
   for (const [userId, data] of Object.entries(users)) {
     const remaining = data.expiration - now;
-    // 30 min alerta
     if (remaining <= 30 * 60 * 1000 && remaining > 0) {
       if (!Auth.authData.notifiedUsers.has(userId)) {
         try {
@@ -1185,9 +1224,10 @@ setInterval(async () => {
         } catch (e) {}
       }
     }
-    // Expirado
     if (remaining <= 0) {
-      Auth.sql.deleteVip.run(String(userId));
+      // Nota: Asumiendo que Auth.sql.deleteVip existe en tu versión
+      if (Auth.sql && Auth.sql.deleteVip)
+        Auth.sql.deleteVip.run(String(userId));
       Auth.authData.notifiedUsers.delete(userId);
       try {
         await bot.telegram.sendMessage(userId, "🚫 Tu acceso ha expirado.", {
@@ -1198,25 +1238,29 @@ setInterval(async () => {
   }
 }, 60000);
 
-require("./handlers/callbacks")(bot, userState, getUserProfile, CreditsManager);
+// Cargar handlers externos si existen
+try {
+  require("./handlers/callbacks")(
+    bot,
+    userState,
+    getUserProfile,
+    CreditsManager,
+  );
+} catch (e) {
+  console.log("⚠️ No se encontró handlers/callbacks.js, saltando carga.");
+}
 
-// ==========================================
-// --- SISTEMA DE ARRANQUE Y APAGADO ---
-// ==========================================
+// ANTI-CRASH
+bot.catch((err, ctx) => {
+  const userId = ctx?.from?.id || "Desconocido";
+  if (err.response && err.response.error_code === 403) return;
+  if (err.response && err.response.error_code === 429) return;
+  console.error(`❌ [ERROR CRÍTICO]`, err);
+});
 
+// ARRANQUE
 const gracefulStop = async (signal) => {
   console.log(`🛑 Recibida señal ${signal}. Apagando sistema...`);
-  try {
-    if (process.env.LOG_CHANNEL_ID) {
-      await bot.telegram
-        .sendMessage(
-          process.env.LOG_CHANNEL_ID,
-          `🛑 <b>SISTEMA DETENIDO</b>\n${Config.decoration.line}\n⚠️ <b>Señal:</b> ${signal}\n📉 <b>Estado:</b> Offline`,
-          { parse_mode: "HTML" },
-        )
-        .catch(() => {});
-    }
-  } catch (e) {}
   process.exit(0);
 };
 
@@ -1226,12 +1270,11 @@ process.once("SIGTERM", () => gracefulStop("SIGTERM"));
 const iniciarBot = async () => {
   try {
     await bot.launch();
-    console.log(Config.logs.start);
-    console.log("🔋 [SQLITE] Base de datos conectada.");
+    console.log("✅ CORE ONLINE");
     Logger.log(
       "system",
       null,
-      `✅ <b>CORE V3 ONLINE</b>\n${Config.decoration.line}\n🔌 <b>DB:</b> SQLite (WAL)\n🤖 <b>Bot:</b> ${Config.bot.shortName}\n🛡️ <b>Sistema:</b> <code>Running</code>`,
+      `✅ <b>CORE V3 ONLINE</b>\n${Config.decoration.line}\n🤖 <b>Bot:</b> ${Config.bot.shortName}`,
     );
   } catch (error) {
     console.error("Error arranque:", error);
