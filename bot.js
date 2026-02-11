@@ -20,6 +20,9 @@ const extra = require("./funcionalidades/extra.js");
 const consultarBIN = require("./funcionalidades/bin.js");
 const CreditsManager = require("./database/credits.js");
 const detectarPasarela = require("./funcionalidades/pasarela.js");
+const { parseCards } = require("./funcionalidades/tools.js");
+const GateAuth = require("./gates/authorize.js"); // Tu gate nuevo
+
 // Alias
 const Credits = CreditsManager;
 
@@ -469,6 +472,143 @@ bot.command("bc", async (ctx) => {
     } catch (e) {}
   }
   ctx.reply("✅ Broadcast terminado.");
+});
+
+// ==========================================
+// --- MÓDULO: CHECKER GATES (MULTI-THREAD) ---
+// ==========================================
+
+bot.command(["chk", "sa"], async (ctx) => {
+  const userId = ctx.from.id;
+  const username = ctx.from.username || "Anon";
+  const userRole = Auth.getRole(userId);
+
+  // 1. EXTRAER TARJETAS (Hasta 10)
+  const input = ctx.message.text;
+  const cards = parseCards(input);
+
+  if (cards.length === 0) {
+    return ctx.replyWithHTML(
+      `${Config.emojis.warning} <b>Formato inválido.</b>\nEnvía hasta 10 CCs:\n<code>CC|MM|YY|CVV</code>`,
+    );
+  }
+
+  // 2. CÁLCULO DE CRÉDITOS
+  // Staff: Gratis. Usuarios: 1 Crédito por tarjeta.
+  const cost = ["OWNER", "ADMIN", "SELLER"].includes(userRole)
+    ? 0
+    : cards.length;
+
+  if (cost > 0) {
+    const balance = Credits.get(userId);
+    if (balance < cost)
+      return ctx.replyWithHTML(
+        `⚠️ <b>Saldo Insuficiente.</b>\nNecesitas <code>${cost}</code> créditos. Tienes: <code>${balance}</code>.`,
+      );
+    Credits.remove(userId, cost); // Descontamos el paquete entero
+  }
+
+  // 3. MENSAJE DE ESPERA (DASHBOARD)
+  let dashboardMsg =
+    `🚀 <b>SOCIETY CHECKER V3</b>\n` +
+    `${Config.decoration.line}\n` +
+    `💳 <b>Cargadas:</b> ${cards.length}\n` +
+    `⏳ <b>Estado:</b> Iniciando motor...\n` +
+    `${Config.decoration.line}`;
+
+  const msgWait = await ctx.replyWithHTML(dashboardMsg);
+
+  let liveCount = 0;
+  let deadCount = 0;
+  let summary = []; // Para guardar resultados Dead/CCN
+
+  // 4. BUCLE DE PROCESAMIENTO
+  for (const [index, card] of cards.entries()) {
+    try {
+      // Actualizamos estado visual cada 2 tarjetas para no saturar a Telegram
+      if (index % 2 === 0) {
+        await ctx.telegram
+          .editMessageText(
+            ctx.chat.id,
+            msgWait.message_id,
+            null,
+            dashboardMsg.replace(
+              "Iniciando motor...",
+              `Procesando ${index + 1}/${cards.length}...`,
+            ),
+            { parse_mode: "HTML" },
+          )
+          .catch(() => {});
+      }
+
+      const startTime = Date.now();
+      // LLAMADA AL GATE (Tu archivo authorize.js)
+      const result = await GateAuth.check(
+        card.cc,
+        card.mes,
+        card.anio,
+        card.cvv,
+      );
+      const timeTaken = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      // === DISEÑO MAQUILLADO PARA LIVES (MENSAJE NUEVO) ===
+      if (result.status === "LIVE" || result.status === "CCN") {
+        liveCount++;
+        const icon = result.status === "LIVE" ? "✅" : "☑️";
+        const title =
+          result.status === "LIVE"
+            ? "APPROVED / CHARGED"
+            : "CCN LIVE / APPROVED";
+
+        const liveMessage =
+          `<b>${icon} ${title}</b>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `💳 <b>Card:</b> <code>${card.cc}</code>\n` +
+          `📅 <b>Exp:</b> <code>${card.mes}/${card.anio}</code> • <b>Cvv:</b> <code>${card.cvv}</code>\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `💬 <b>Result:</b> ${result.msg}\n` +
+          `🏦 <b>Gate:</b> ${result.gate}\n` +
+          `⏱️ <b>Time:</b> ${timeTaken}s\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `👤 <b>User:</b> ${ctx.from.first_name} [${userRole}]\n` +
+          `💎 <b>Bot:</b> ${Config.bot.shortName}`;
+
+        // Enviamos el LIVE como mensaje NUEVO (Reply)
+        await ctx.replyWithHTML(liveMessage);
+
+        // LOG INTERNO
+        Logger.log(
+          "live",
+          ctx,
+          `${icon} <b>HIT ${result.status}</b>\nCard: ${card.mask}\nMsg: ${result.msg}`,
+        );
+      } else {
+        deadCount++;
+        // Guardamos en resumen solo los últimos 4 dígitos
+        summary.push(`❌ ${card.mask} ➜ ${result.msg}`);
+      }
+    } catch (e) {
+      console.error(e);
+      deadCount++;
+      summary.push(`⚠️ ${card.mask} ➜ Error API`);
+    }
+  }
+
+  // 5. ACTUALIZACIÓN FINAL DEL DASHBOARD (RESUMEN)
+  const finalReport =
+    `🏁 <b>SESIÓN FINALIZADA</b>\n` +
+    `${Config.decoration.line}\n` +
+    `✅ <b>Lives:</b> ${liveCount}\n` +
+    `❌ <b>Deads:</b> ${deadCount}\n` +
+    `📉 <b>Total:</b> ${cards.length}\n` +
+    `${Config.decoration.line}\n` +
+    `<i>Los Lives fueron enviados en mensajes separados.</i>`;
+
+  await ctx.telegram
+    .editMessageText(ctx.chat.id, msgWait.message_id, null, finalReport, {
+      parse_mode: "HTML",
+    })
+    .catch(() => {});
 });
 
 // ======================
