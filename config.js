@@ -19,13 +19,15 @@ const Config = {
   },
 
   // 3. PRECIOS (RESTAURADO PARA COMANDO /PRICES)
+  // config.js (Asegúrate de tener estos campos en la sección prices)
   prices: {
     currency: "USDT/LTC/BTC",
     symbol: "$",
-    day: "5 USD",
-    week: "20 USD",
-    month: "45 USD",
-    grpmonth: "350 USD",
+    day: "5",
+    week: "20",
+    month: "45",
+    grpmonth: "350",
+    credits_package: "10", // Precio por pack de créditos sugerido
   },
 
   // 4. SISTEMA DE LOGS (CENTRALIZADO)

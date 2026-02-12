@@ -9,16 +9,18 @@ module.exports = (bot, userState, getUserProfile) => {
   bot.on("callback_query", async (ctx) => {
     const data = ctx.callbackQuery.data;
     const uid = ctx.from.id;
-    const msgId = ctx.callbackQuery.message.message_id;
 
-    // console.log(`[DEBUG] Button: ${data} | User: ${uid}`);
+    // Metadatos detallados para trazabilidad
+    const operatorName = ctx.from.first_name;
+    const operatorUser = ctx.from.username ? `@${ctx.from.username}` : "N/A";
+    const timestamp = new Date().toLocaleString();
 
     try {
       await ctx.answerCbQuery().catch(() => {});
     } catch (e) {}
 
     // ====================================
-    // --- 1. SISTEMA DE AYUDA (INFO) ---
+    // --- 1. GUÍAS Y AYUDA (ORIGINALES) ---
     // ====================================
 
     if (data === "HELP_GEN") {
@@ -28,7 +30,7 @@ module.exports = (bot, userState, getUserProfile) => {
         `El comando <code>/gen</code> crea tarjetas basadas en un BIN, calculando algoritmo de Luhn y fecha válida.\n\n` +
         `📝 <b>Uso:</b> <code>/gen 454545</code>\n` +
         `💡 <i>Genera 10 tarjetas por solicitud.</i>\n` +
-        `💰 <b>Costo:</b> 1 Crédito.`;
+        `💰 <b>Costo:</b> ${Config.limits.costs.generator} Crédito.`;
 
       return ctx
         .editMessageText(text, {
@@ -81,17 +83,15 @@ module.exports = (bot, userState, getUserProfile) => {
         `${Config.emojis.admin} <b>PANEL DE COMANDOS STAFF</b>\n` +
         `${Config.decoration.line}\n\n` +
         `👮 <b>ADMIN / OWNER:</b>\n` +
-        `├ <code>/auth [ID] [RANGO]</code> - Crear Staff\n` +
-        `├ <code>/unauth [ID]</code> - Despedir Staff\n` +
+        `├ <code>/auth [ID] [RANGO]</code>\n` +
+        `├ <code>/unauth [ID]</code>\n` +
         `└ <code>/config</code> - Panel Global\n\n` +
         `💰 <b>SELLER / ADMIN:</b>\n` +
         `├ <code>/addcredits [ID] [CANT]</code>\n` +
         `└ <code>/genkey [1d/1w/1m]</code>\n\n` +
         `🛡️ <b>MOD / ADMIN:</b>\n` +
-        `├ <code>/ban [ID]</code> - Banear Usuario\n` +
-        `├ <code>/unban [ID]</code> - Desbanear\n` +
-        `├ <code>/kick [ID]</code> - Expulsar\n` +
-        `└ <code>/mute [ID]</code> - Silenciar`;
+        `├ <code>/ban [ID]</code>\n` +
+        `└ <code>/mute [ID]</code>`;
 
       return ctx
         .editMessageText(text, {
@@ -104,7 +104,164 @@ module.exports = (bot, userState, getUserProfile) => {
     }
 
     // ====================================
-    // --- 2. NAVEGACIÓN DE MENÚS ---
+    // --- 2. GESTIÓN AUTOMÁTICA (BOTONES) ---
+    // ====================================
+
+    if (data.startsWith("MANAGE_USER_")) {
+      const targetId = data.replace("MANAGE_USER_", "");
+      return ctx
+        .editMessageText(
+          `⚙️ <b>GESTIÓN DE USUARIO</b>\n${Config.decoration.line}\n🆔 ID: <code>${targetId}</code>\n\nElige una categoría:`,
+          {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+              [
+                Markup.button.callback(
+                  "🎖️ GESTIONAR RANGO",
+                  `MENU_RANK_${targetId}`,
+                ),
+              ],
+              [
+                Markup.button.callback(
+                  "💰 GESTIONAR SALDO",
+                  `MENU_CRED_${targetId}`,
+                ),
+              ],
+              [
+                Markup.button.callback(
+                  "🚫 REVOCAR TODO",
+                  `REV_ALL_${targetId}`,
+                ),
+              ],
+              [
+                Markup.button.callback(
+                  "🔙 VOLVER AL PANEL",
+                  "BACK_TO_MAIN_CONFIG",
+                ),
+              ],
+            ]),
+          },
+        )
+        .catch(() => {});
+    }
+
+    // SUB-MENÚ DE RANGOS
+    if (data.startsWith("MENU_RANK_")) {
+      const tid = data.replace("MENU_RANK_", "");
+      return ctx
+        .editMessageText(
+          `🎖️ <b>ASIGNAR RANGO</b>\n🆔 ID: <code>${tid}</code>`,
+          {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+              [
+                Markup.button.callback("👮 ADMIN", `EXEC_RANK_${tid}_ADMIN`),
+                Markup.button.callback("🛡️ MOD", `EXEC_RANK_${tid}_MOD`),
+              ],
+              [
+                Markup.button.callback("💸 SELLER", `EXEC_RANK_${tid}_SELLER`),
+                Markup.button.callback("💎 VIP", `EXEC_RANK_${tid}_VIP`),
+              ],
+              [Markup.button.callback("👤 FREE", `EXEC_RANK_${tid}_FREE`)],
+              [Markup.button.callback("🔙 VOLVER", `MANAGE_USER_${tid}`)],
+            ]),
+          },
+        )
+        .catch(() => {});
+    }
+
+    // EJECUCIÓN RANGOS + LOGS DETALLADOS
+    if (data.startsWith("EXEC_RANK_")) {
+      const [_, __, tid, rank] = data.split("_");
+      if (!Auth.canManage(uid, tid))
+        return ctx.answerCbQuery("🚫 Jerarquía insuficiente.", {
+          show_alert: true,
+        });
+
+      if (rank === "FREE") Auth.unauthorize(tid);
+      else Auth.authorize(tid, rank, "User");
+
+      const logMsg =
+        `🎖️ <b>RANGO ACTUALIZADO</b>\n${Config.decoration.line}\n` +
+        `👤 <b>Objetivo ID:</b> <code>${tid}</code>\n` +
+        `🎖️ <b>Nuevo Rango:</b> <code>${rank}</code>\n` +
+        `${Config.decoration.line}\n` +
+        `👮 <b>Staff:</b> ${operatorName} (${operatorUser})\n` +
+        `🆔 <b>Staff ID:</b> <code>${uid}</code>\n` +
+        `📅 <b>Fecha:</b> ${timestamp}`;
+
+      await ctx.editMessageText(logMsg, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("🔙 VOLVER", "BACK_TO_MAIN_CONFIG")],
+        ]),
+      });
+      Logger.log("auth", ctx, logMsg);
+      console.log(
+        `[AUTH] ${operatorName} cambió rango de ${tid} a ${rank} - ${timestamp}`,
+      );
+    }
+
+    // SUB-MENÚ CRÉDITOS
+    if (data.startsWith("MENU_CRED_")) {
+      const tid = data.replace("MENU_CRED_", "");
+      return ctx
+        .editMessageText(
+          `💰 <b>AJUSTE DE SALDO</b>\n🆔 ID: <code>${tid}</code>`,
+          {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+              [
+                Markup.button.callback("➕ 10", `EXEC_CRED_${tid}_10`),
+                Markup.button.callback("➕ 50", `EXEC_CRED_${tid}_50`),
+              ],
+              [
+                Markup.button.callback("➕ 100", `EXEC_CRED_${tid}_100`),
+                Markup.button.callback("🗑️ WIPE", `EXEC_CRED_${tid}_WIPE`),
+              ],
+              [Markup.button.callback("🔙 VOLVER", `MANAGE_USER_${tid}`)],
+            ]),
+          },
+        )
+        .catch(() => {});
+    }
+
+    // EJECUCIÓN CRÉDITOS + LOGS DETALLADOS
+    if (data.startsWith("EXEC_CRED_")) {
+      const [_, __, tid, amount] = data.split("_");
+      let newBalance;
+
+      if (amount === "WIPE") {
+        CreditsManager.remove(tid, "ALL");
+        newBalance = 0;
+      } else {
+        newBalance = CreditsManager.add(tid, amount, uid);
+      }
+
+      const logMsg =
+        `💰 <b>SALDO MODIFICADO</b>\n${Config.decoration.line}\n` +
+        `👤 <b>Usuario ID:</b> <code>${tid}</code>\n` +
+        `💵 <b>Acción:</b> ${amount === "WIPE" ? "Reset" : "+" + amount}\n` +
+        `📈 <b>Nuevo Total:</b> <code>${newBalance}</code>\n` +
+        `${Config.decoration.line}\n` +
+        `👮 <b>Staff:</b> ${operatorName} (${operatorUser})\n` +
+        `🆔 <b>Staff ID:</b> <code>${uid}</code>\n` +
+        `📅 <b>Fecha:</b> ${timestamp}`;
+
+      await ctx.editMessageText(logMsg, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("🔙 VOLVER", "BACK_TO_MAIN_CONFIG")],
+        ]),
+      });
+      Logger.log("money", ctx, logMsg);
+      console.log(
+        `[CREDITS] ${operatorName} modificó saldo de ${tid}: ${amount} - ${timestamp}`,
+      );
+    }
+
+    // ====================================
+    // --- 3. NAVEGACIÓN Y CONFIG ---
     // ====================================
 
     if (data === "BACK_HELP") {
@@ -135,55 +292,38 @@ module.exports = (bot, userState, getUserProfile) => {
     }
 
     if (data === "BACK_TO_START") {
-      const firstName = ctx.from.first_name;
-      const profileInfo = getUserProfile(uid, firstName);
-
-      // Reconstruir botones de Start
+      const profileInfo = getUserProfile(uid, ctx.from.first_name);
       let buttons = [
         [Markup.button.callback("💎 ADQUIRIR VIP", "SHOW_PRICES")],
         [Markup.button.callback("📚 GUÍA DE USO", "BACK_HELP")],
         [Markup.button.url("👨‍💻 SOPORTE", Config.owner.supportLink)],
       ];
 
-      // Si es Admin/Owner, mostrar botón de config
-      if (uid === Auth.ADMIN_ID) {
+      if (uid.toString() === Auth.ADMIN_ID.toString()) {
         buttons.unshift([
-          Markup.button.callback("🛠️ CONFIGURACIÓN", "BACK_TO_MAIN_CONFIG"),
+          Markup.button.callback("🛠️ PANEL DE CONTROL", "BACK_TO_MAIN_CONFIG"),
         ]);
       }
 
       return ctx
-        .editMessageText(
-          `${Config.text.headerStart}\n\n🚀 <b>CHECKER ${Config.bot.version}</b>\n${Config.decoration.line}\nSelecciona una opción:\n\n${profileInfo}`,
-          { parse_mode: "HTML", ...Markup.inlineKeyboard(buttons) },
-        )
-        .catch(() => {});
-    }
-
-    if (data === "SHOW_PROFILE") {
-      const profile = getUserProfile(uid, ctx.from.first_name);
-      return ctx
-        .editMessageText(profile, {
+        .editMessageText(`${Config.text.headerStart}\n\n${profileInfo}`, {
           parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback("🔙 VOLVER", "BACK_TO_START")],
-          ]),
+          ...Markup.inlineKeyboard(buttons),
         })
         .catch(() => {});
     }
 
     if (data === "SHOW_PRICES") {
-      const pricesMessage =
+      const msg =
         `${Config.emojis.card} <b>TARIFAS PREMIUM</b>\n` +
         `${Config.decoration.line}\n\n` +
         `🔵 <b>DIARIO:</b> <code>${Config.prices.day}</code>\n` +
         `🟢 <b>SEMANAL:</b> <code>${Config.prices.week}</code>\n` +
         `🔴 <b>MENSUAL:</b> <code>${Config.prices.month}</code>\n\n` +
-        `<i>Pagos en: ${Config.prices.currency}</i>\n` +
-        `${Config.decoration.line}`;
+        `<i>Pagos en: ${Config.prices.currency}</i>\n${Config.decoration.line}`;
 
       return ctx
-        .editMessageText(pricesMessage, {
+        .editMessageText(msg, {
           parse_mode: "HTML",
           ...Markup.inlineKeyboard([
             [Markup.button.url("🛒 Comprar Ahora", Config.owner.supportLink)],
@@ -193,22 +333,13 @@ module.exports = (bot, userState, getUserProfile) => {
         .catch(() => {});
     }
 
-    // ====================================
-    // --- 3. GESTIÓN DE ESTADOS (ADMIN) ---
-    // ====================================
-
     if (data === "BACK_TO_MAIN_CONFIG") {
-      // SOLO EL OWNER (ADMIN_ID) PUEDE VER EL PANEL GLOBAL
-      if (uid !== Auth.ADMIN_ID)
-        return ctx.answerCbQuery("🚫 Acceso restringido al Owner.", {
-          show_alert: true,
-        });
-
+      if (uid.toString() !== Auth.ADMIN_ID.toString())
+        return ctx.answerCbQuery("🚫 Solo el Owner.");
       delete userState[uid];
-
       return ctx
         .editMessageText(
-          `⚙️ <b>CONFIGURACIÓN MAESTRA</b>\n${Config.decoration.line}\nSelecciona qué deseas gestionar:`,
+          `⚙️ <b>CONFIGURACIÓN MAESTRA</b>\n${Config.decoration.line}\nSelecciona una categoría:`,
           {
             parse_mode: "HTML",
             ...Markup.inlineKeyboard([
@@ -217,190 +348,71 @@ module.exports = (bot, userState, getUserProfile) => {
                 Markup.button.callback("💰 CRÉDITOS", "SET_STATE_CRED"),
               ],
               [
-                Markup.button.callback("👥 GRUPOS", "SET_STATE_GRP"),
-                Markup.button.callback("🔑 KEYS", "SET_STATE_KEYS"),
+                Markup.button.callback("📊 ESTADÍSTICAS", "UPDATE_STATS"),
+                Markup.button.callback("❌ CERRAR", "CLOSE_PANEL"),
               ],
-              [Markup.button.callback("❌ CERRAR", "CLOSE_PANEL")],
             ]),
           },
         )
         .catch(() => {});
-    }
-
-    if (data === "CLOSE_PANEL") {
-      return ctx.deleteMessage().catch(() => {});
     }
 
     if (data.startsWith("SET_STATE_")) {
-      if (uid !== Auth.ADMIN_ID) return;
       const type = data.replace("SET_STATE_", "");
-
       userState[uid] = { step: "WAITING_ID", type: type };
-
-      let msg = "";
-      if (type === "STAFF")
-        msg =
-          "👮 <b>GESTIÓN STAFF</b>\nEnvía el <b>ID</b> del usuario a gestionar:";
-      if (type === "CRED")
-        msg = "💰 <b>GESTIÓN CRÉDITOS</b>\nEnvía el <b>ID</b> del usuario:";
-      if (type === "GRP")
-        msg = "👥 <b>GESTIÓN GRUPOS</b>\nEnvía el <b>ID</b> del grupo:";
-      if (type === "KEYS")
-        msg = "🔑 <b>GESTIÓN KEYS</b>\nEnvía la <b>KEY</b> a consultar:";
-
       return ctx
-        .editMessageText(msg + `\n\n<i>Escribe "cancelar" para salir.</i>`, {
-          parse_mode: "HTML",
-        })
-        .catch(() => {});
-    }
-
-    // ====================================
-    // --- 4. ACCIONES DE GESTIÓN ---
-    // ====================================
-
-    // --- STAFF ---
-    if (data.startsWith("CONF_STAFF_")) {
-      const targetId = data.replace("CONF_STAFF_", "");
-      // Le mostramos al Admin los comandos exactos para copiar y pegar
-      await ctx.replyWithHTML(
-        `👮 <b>ASIGNACIÓN RÁPIDA</b>\nCopía y pega el comando:\n\n` +
-          `🔹 <b>ADMIN:</b> <code>/auth ${targetId} ADMIN</code>\n` +
-          `🔹 <b>SELLER:</b> <code>/auth ${targetId} SELLER</code>\n` +
-          `🔹 <b>MOD:</b> <code>/auth ${targetId} MOD</code>`,
-      );
-    }
-
-    // --- CRÉDITOS ---
-    if (data.startsWith("CONF_CRED_")) {
-      const targetId = data.replace("CONF_CRED_", "");
-      await ctx.reply(
-        `💰 Para añadir créditos, usa:\n<code>/addcredits ${targetId} 10</code>`,
-      );
-    }
-
-    // --- KEYS (Consultar) ---
-    if (data.startsWith("CONF_KEY_")) {
-      const key = data.replace("CONF_KEY_", "");
-      const info = Auth.authData.activeKeys[key];
-      if (info) {
-        await ctx.editMessageText(
-          `${Config.emojis.key} <b>KEY INFO</b>\nKEY: <code>${key}</code>\nDuración: ${info / 3600000} Horas\nEstado: ACTIVA`,
-          {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [Markup.button.callback("🔙 VOLVER", "BACK_TO_MAIN_CONFIG")],
-            ]),
-          },
-        );
-      } else {
-        await ctx.reply("❌ Key no encontrada o ya usada.");
-      }
-    }
-
-    // --- REVOCAR (Acción Crítica BLINDADA) ---
-    if (data.startsWith("REV_ALL_")) {
-      const tid = data.replace("REV_ALL_", "");
-
-      // 1. BLINDAJE: Verificamos Jerarquía antes de ejecutar
-      if (!Auth.canManage(uid, tid)) {
-        return ctx.answerCbQuery(
-          "🚫 Jerarquía Insuficiente: No puedes revocar a este usuario.",
-          { show_alert: true },
-        );
-      }
-
-      Auth.unauthorize(tid);
-      CreditsManager.remove(tid, "ALL");
-
-      await ctx
         .editMessageText(
-          `🛡️ <b>ACCESOS REVOCADOS</b>\n${Config.decoration.line}\n🆔 ID: <code>${tid}</code>\n⚠️ El usuario ha sido removido del Staff y su saldo quedó en 0.`,
+          `🔍 <b>BUSCAR USUARIO</b>\n${Config.decoration.line}\nEnvía el <b>ID</b> del usuario.\n\n<i>Escribe "cancelar" para abortar.</i>`,
           {
             parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [
-                Markup.button.callback(
-                  "🔙 VOLVER AL PANEL",
-                  "BACK_TO_MAIN_CONFIG",
-                ),
-              ],
-            ]),
           },
         )
         .catch(() => {});
-
-      Logger.log(
-        "auth",
-        ctx,
-        `🗑️ <b>REVOKE ALL (PANEL)</b>\nTarget: <code>${tid}</code>\nAcción: Unauth + Wipe Credits`,
-      );
     }
-
-    if (data.startsWith("REV_KEY_")) {
-      const key = data.replace("REV_KEY_", "");
-      if (Auth.authData.activeKeys[key]) {
-        delete Auth.authData.activeKeys[key];
-        Auth.saveKeys();
-        await ctx.reply("🗑️ Key eliminada correctamente.");
-        Logger.log(
-          "auth",
-          ctx,
-          `🗑️ <b>KEY ELIMINADA</b>\nKey: <code>${key}</code>`,
-        );
-      } else {
-        await ctx.reply("❌ Key no existe.");
-      }
-    }
-
-    // ====================================
-    // --- 5. STATS UPDATE (ACTUALIZADO) ---
-    // ====================================
 
     if (data === "UPDATE_STATS") {
-      if (uid !== Auth.ADMIN_ID) return;
-
       const uptime = process.uptime();
-      const hours = Math.floor(uptime / 3600);
-      const minutes = Math.floor((uptime % 3600) / 60);
-
-      const totalUsers = Object.keys(Auth.authData.users).length;
-      const totalVips = Object.keys(Auth.authData.commonUsers).length;
-
-      // Calcular Stats Reales por Rango
-      let admins = 0,
-        sellers = 0,
-        mods = 0;
-      Object.values(Auth.authData.users).forEach((u) => {
-        if (u.rango === "ADMIN") admins++;
-        if (u.rango === "SELLER") sellers++;
-        if (u.rango === "MOD") mods++; // ¡AHORA SÍ CONTAMOS MODS!
-      });
-
       const statsMsg =
-        `${Config.emojis.stats} <b>DASHBOARD DE OPERACIONES</b>\n` +
-        `${Config.decoration.line}\n\n` +
-        `🖥 <b>ESTADO DEL CORE:</b>\n` +
-        `├ <b>Status:</b> <code>STABLE</code> 💹\n` +
-        `└ <b>Uptime:</b> <code>${hours}h ${minutes}m</code>\n\n` +
-        `👮 <b>FUERZA DE STAFF:</b>\n` +
-        `├ <b>Admins:</b> <code>${admins}</code>\n` +
-        `├ <b>Sellers:</b> <code>${sellers}</code>\n` +
-        `└ <b>Mods:</b> <code>${mods}</code>\n\n` +
-        `💎 <b>INFRAESTRUCTURA VIP:</b>\n` +
-        `├ <b>Usuarios VIP:</b> <code>${totalVips}</code>\n` +
-        `└ <b>Staff Total:</b> <code>${totalUsers}</code>\n\n` +
+        `${Config.emojis.stats} <b>DASHBOARD DEL SISTEMA</b>\n` +
         `${Config.decoration.line}\n` +
-        `${Config.emojis.tech} <b>NETWORK:</b> <code>CONNECTED</code>`;
-
-      await ctx
+        `⏱ Uptime: <code>${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m</code>\n` +
+        `👮 Staff: <code>${Object.keys(Auth.getAllStaff()).length}</code>\n` +
+        `💎 VIPs: <code>${Object.keys(Auth.getAllVips()).length}</code>\n` +
+        `📅 <b>Sync:</b> ${timestamp}`;
+      return ctx
         .editMessageText(statsMsg, {
           parse_mode: "HTML",
           ...Markup.inlineKeyboard([
-            [Markup.button.callback("🔄 REFRESCAR DATOS", "UPDATE_STATS")],
+            [
+              Markup.button.callback("🔄 RECARGAR", "UPDATE_STATS"),
+              Markup.button.callback("🔙 VOLVER", "BACK_TO_MAIN_CONFIG"),
+            ],
           ]),
         })
         .catch(() => {});
     }
+
+    if (data.startsWith("REV_ALL_")) {
+      const tid = data.replace("REV_ALL_", "");
+      if (!Auth.canManage(uid, tid))
+        return ctx.answerCbQuery("🚫 Jerarquía Insuficiente.", {
+          show_alert: true,
+        });
+
+      Auth.unauthorize(tid);
+      CreditsManager.remove(tid, "ALL");
+
+      const revLog = `🛡️ <b>REVOCACIÓN COMPLETA</b>\n${Config.decoration.line}\n🆔 <b>Target ID:</b> <code>${tid}</code>\n⚠️ Estado: Removido y Saldo 0.\n${Config.decoration.line}\n👮 <b>Staff:</b> ${operatorName}\n📅 <b>Fecha:</b> ${timestamp}`;
+
+      await ctx.editMessageText(revLog, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("🔙 VOLVER", "BACK_TO_MAIN_CONFIG")],
+        ]),
+      });
+      Logger.log("auth", ctx, revLog);
+    }
+
+    if (data === "CLOSE_PANEL") return ctx.deleteMessage().catch(() => {});
   });
 };

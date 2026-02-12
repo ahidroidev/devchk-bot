@@ -138,40 +138,27 @@ bot.on("text", async (ctx, next) => {
   }
 
   // FIX: VALIDAR NUMEROS
-  if (["STAFF", "CRED"].includes(state.type) && !/^\d+$/.test(input)) {
+  if (state && state.step === "WAITING_ID") {
+    const input = ctx.message.text.trim();
+    if (!/^\d+$/.test(input)) return ctx.reply("⚠️ ID inválido.");
+
+    delete userState[uid]; // Limpiamos estado
+
+    // En lugar de texto plano, mandamos el botón que activa el menú en callbacks.js
     return ctx.replyWithHTML(
-      `⚠️ <b>Error:</b> El ID debe ser numérico.\nIntenta de nuevo o escribe "cancelar".`,
+      `👤 <b>USUARIO LOCALIZADO:</b> <code>${input}</code>\n` +
+        `Acción: <b>Gestionar ${state.type}</b>\n\n` +
+        `<i>Selecciona una opción para proceder:</i>`,
+      Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "⚙️ ABRIR PANEL DE GESTIÓN",
+            `MANAGE_USER_${input}`,
+          ),
+        ],
+        [Markup.button.callback("❌ CANCELAR", "BACK_TO_MAIN_CONFIG")],
+      ]),
     );
-  }
-
-  const type = state.type;
-  let buttons = [];
-  let text = "";
-
-  if (type === "STAFF") {
-    text = `${Config.emojis.admin || "👮"} <b>GESTIÓN DE STAFF</b>\n🆔 ID: <code>${input}</code>`;
-    buttons = [
-      [Markup.button.callback("🎖️ ASIGNAR RANGO", `CONF_STAFF_${input}`)],
-      [Markup.button.callback("🗑️ REVOCAR STAFF", `REV_ALL_${input}`)],
-    ];
-  } else if (type === "CRED") {
-    text = `${Config.emojis.money} <b>GESTIÓN DE CRÉDITOS</b>\n🆔 ID: <code>${input}</code>`;
-    buttons = [
-      [Markup.button.callback("➕ AÑADIR CRÉDITOS", `CONF_CRED_${input}`)],
-      [Markup.button.callback("➖ REVOCAR TODO", `REV_ALL_${input}`)],
-    ];
-  } else if (type === "GRP") {
-    text = `👥 <b>GESTIÓN DE GRUPO</b>\n🆔 GID: <code>${input}</code>`;
-    buttons = [
-      [Markup.button.callback("✅ AUTORIZAR", `CONF_GRP_${input}`)],
-      [Markup.button.callback("🚫 REVOCAR", `REV_GRP_${input}`)],
-    ];
-  } else if (type === "KEYS") {
-    text = `${Config.emojis.key || "🔑"} <b>GESTIÓN DE KEY</b>\n<code>${input}</code>`;
-    buttons = [
-      [Markup.button.callback("✅ CONFIRMAR", `CONF_KEY_${input}`)],
-      [Markup.button.callback("❌ ELIMINAR", `REV_KEY_${input}`)],
-    ];
   }
 
   buttons.push([
