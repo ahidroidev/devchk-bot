@@ -13,9 +13,9 @@ const Config = {
 
   // 2. PROPIETARIO Y SOPORTE (RESTAURADO PARA CALLBACKS.JS)
   owner: {
-    id: "6472684724", // Tu ID
-    username: "@DevCrackPy",
-    supportLink: "https://t.me/DevCrackPy", // <-- ESTO FALTABA Y CAUSABA EL ERROR
+    id: "8477619369", // Tu ID
+    username: "@devcrackpy",
+    supportLink: "https://t.me/devcrackpy", // <-- ESTO FALTABA Y CAUSABA EL ERROR
   },
 
   // 3. PRECIOS (RESTAURADO PARA COMANDO /PRICES)
@@ -114,9 +114,9 @@ const Config = {
 
   // 10. TEXTOS LEGACY (RESTAURADOS PARA COMPATIBILIDAD CON CALLBACKS.JS)
   text: {
-    headerStart: "⚡ <b>SOCIETY BOT V3</b> ⚡",
+    headerStart: "⚡ <b>DEVCHK BOT V3</b> ⚡",
     helpMenu: "📖 <b>CENTRO DE AYUDA</b>",
-    footer: "🔒 <i>Powered by Society Core</i>",
+    footer: "🔒 <i>Powered by Society . E X E</i>",
     genTitle: "💳 <b>GENERADOR DE TARJETAS</b>",
     binTitle: "🔍 <b>INFORMACIÓN DE BIN</b>",
     extraTitle: "📊 <b>EXTRAPOLACIÓN</b>",
@@ -144,7 +144,7 @@ const Config = {
     checker: {
       wait: "🚀 <b>Iniciando Motor...</b>",
       processing: "⏳ <b>Procesando...</b>",
-      finished: "🏁 <b>SESIÓN FINALIZADA</b>",
+      finished: "🏁 <b>SESIÓN FINALIZADA.</b>",
     },
     scanner: {
       scanning: "🛰 <b>Escaneando Objetivo...</b>",
