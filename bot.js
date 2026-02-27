@@ -122,50 +122,38 @@ if (Auth.authMiddleware) {
 // ============================
 bot.on("text", async (ctx, next) => {
   const uid = ctx.from.id;
-  const state = userState[ctx.from.id];
+  const state = userState[uid];
 
   if (ctx.message.text.startsWith("/")) return next();
-  if (!state || !state.step || state.step !== "WAITING_ID") return next();
+  if (!state || state.step !== "WAITING_ID") return next();
 
+  // FIX 1: Declarar input antes de usarlo
   const input = ctx.message.text.trim();
 
-  // FIX: CANCELAR
+  // Cancelar operación
   if (input.toLowerCase() === "cancelar") {
     delete userState[uid];
-    return ctx.replyWithHTML(
-      `🚫 <b>Operación cancelada.</b>\nUsa /config para volver al menú.`,
-    );
+    return ctx.replyWithHTML(`🚫 <b>Operación cancelada.</b>\nUsa /config para volver al menú.`);
   }
 
-  // FIX: VALIDAR NUMEROS
-  if (state && state.step === "WAITING_ID") {
-    const input = ctx.message.text.trim();
-    if (!/^\d+$/.test(input)) return ctx.reply("⚠️ ID inválido.");
-
-    delete userState[uid]; // Limpiamos estado
-
-    // En lugar de texto plano, mandamos el botón que activa el menú en callbacks.js
-    return ctx.replyWithHTML(
-      `👤 <b>USUARIO LOCALIZADO:</b> <code>${input}</code>\n` +
-        `Acción: <b>Gestionar ${state.type}</b>\n\n` +
-        `<i>Selecciona una opción para proceder:</i>`,
-      Markup.inlineKeyboard([
-        [
-          Markup.button.callback(
-            "⚙️ ABRIR PANEL DE GESTIÓN",
-            `MANAGE_USER_${input}`,
-          ),
-        ],
-        [Markup.button.callback("❌ CANCELAR", "BACK_TO_MAIN_CONFIG")],
-      ]),
-    );
+  // Validar numéricos
+  if (!/^\d+$/.test(input)) {
+    return ctx.reply("⚠️ ID inválido. Debe ser numérico.");
   }
 
-  buttons.push([
-    Markup.button.callback("🔙 VOLVER AL MENÚ", "BACK_TO_MAIN_CONFIG"),
-  ]);
-  await ctx.replyWithHTML(text, Markup.inlineKeyboard(buttons));
-  delete userState[uid];
+  const type = state.type;
+  delete userState[uid]; // Limpiamos estado
+
+  // FIX 2: Eliminamos las variables fantasma "text" y "buttons"
+  return ctx.replyWithHTML(
+    `👤 <b>USUARIO LOCALIZADO:</b> <code>${input}</code>\n` +
+    `Acción: <b>Gestionar ${type}</b>\n\n` +
+    `<i>Selecciona una opción para proceder:</i>`,
+    Markup.inlineKeyboard([
+      [Markup.button.callback("⚙️ ABRIR PANEL DE GESTIÓN", `MANAGE_USER_${input}`)],
+      [Markup.button.callback("❌ CANCELAR", "BACK_TO_MAIN_CONFIG")],
+    ])
+  );
 });
 
 // ==========================================
