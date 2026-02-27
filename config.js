@@ -5,10 +5,10 @@ const Config = {
   bot: {
     name: "SOCIETY . E X E",
     shortName: "DEVCHK-BOT",
-    version: "V3.0",
+    version: "V3.1",
     devUser: "@devcrackpy",
     botUser: "@societychk_bot",
-    engine: "SOCIETY-CORE v3.0",
+    engine: "SOCIETY-CORE v3.1",
   },
 
   // 2. PROPIETARIO Y SOPORTE (RESTAURADO PARA CALLBACKS.JS)
@@ -22,12 +22,12 @@ const Config = {
   // config.js (Asegúrate de tener estos campos en la sección prices)
   prices: {
     currency: "USDT/LTC/BTC",
-    symbol: "$",
-    day: "5",
-    week: "20",
-    month: "45",
-    grpmonth: "350",
-    credits_package: "10", // Precio por pack de créditos sugerido
+    symbol: "$ USD",
+    day: "5$",
+    week: "20$",
+    month: "45$",
+    grpmonth: "350$",
+    credits_package: "10$", // Precio por pack de créditos sugerido
   },
 
   // 4. SISTEMA DE LOGS (CENTRALIZADO)
