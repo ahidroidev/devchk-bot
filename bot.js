@@ -105,12 +105,25 @@ const getUserProfile = (userId, firstName) => {
   return info;
 };
 
-// ============================
-// --- Middlewares Security ---
-// ============================
-if (Auth.authMiddleware) {
-  bot.use(Auth.authMiddleware);
-}
+const authMiddleware = async (ctx, next) => {
+  try {
+    if (ctx.from) {
+      // Intentamos verificar si está baneado
+      const banned = isBanned(ctx.from.id);
+      if (banned) {
+         // Opcional: Avisarle que está baneado
+         await ctx.reply("Estás baneado de usar este bot.");
+         return; // Detiene el flujo
+      }
+    }
+    // Si no está baneado, continúa
+    return next();
+  } catch (error) {
+    console.error("❌ Error en authMiddleware:", error.message);
+    // Si hay un error en la DB, lo dejamos pasar temporalmente para que el bot no se muera
+    return next(); 
+  }
+};
 
 // ==========================================
 // --- MÓDULO DE MODERACIÓN ---
